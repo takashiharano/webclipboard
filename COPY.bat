@@ -1,4 +1,4 @@
 @echo off
 cd /d %~dp0
-copy ..\util\target\util.jar .\src\main\webapp\WEB-INF\lib
+copy ..\util.java\target\util.jar .\src\main\webapp\WEB-INF\lib
 pause

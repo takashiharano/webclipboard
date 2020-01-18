@@ -3,7 +3,7 @@ package com.takashiharano.webclp.action;
 import java.io.File;
 
 import com.takashiharano.util.FileUtil;
-import com.takashiharano.util.Util;
+import com.takashiharano.util.json.JsonBuilder;
 import com.takashiharano.webclp.AppManager;
 import com.takashiharano.webclp.Config;
 import com.takashiharano.webclp.ProcessContext;
@@ -27,22 +27,13 @@ public class GetFileListAction extends Action {
       if (i > 0) {
         sb.append(",");
       }
-      sb.append("{");
-      sb.append(Util.quoteString("name"));
-      sb.append(":");
-      sb.append(Util.quoteString(file.getName()));
-      sb.append(",");
 
-      sb.append(Util.quoteString("size"));
-      sb.append(":");
-      sb.append(file.length());
-      sb.append(",");
+      JsonBuilder jb = new JsonBuilder();
+      jb.add("name", file.getName());
+      jb.add("size", file.length());
+      jb.add("lastModified", file.lastModified());
 
-      sb.append(Util.quoteString("lastModified"));
-      sb.append(":");
-      sb.append(file.lastModified());
-
-      sb.append("}");
+      sb.append(jb.toString());
     }
     sb.append("]");
 

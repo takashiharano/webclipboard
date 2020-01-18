@@ -16,7 +16,7 @@ import javax.servlet.http.HttpServletResponse;
 
 import com.takashiharano.util.FileUtil;
 import com.takashiharano.util.Log;
-import com.takashiharano.util.Util;
+import com.takashiharano.util.json.JsonBuilder;
 
 public class ProcessContext {
   private HttpServletRequest request;
@@ -82,17 +82,10 @@ public class ProcessContext {
   }
 
   public void sendJson(String status, String body) throws IOException {
-    StringBuilder sb = new StringBuilder();
-    sb.append("{");
-    sb.append(Util.quoteString("status"));
-    sb.append(":");
-    sb.append(Util.quoteString(status));
-    sb.append(",");
-    sb.append(Util.quoteString("body"));
-    sb.append(":");
-    sb.append(body);
-    sb.append("}");
-    sendJsonResponse(sb.toString());
+    JsonBuilder jb = new JsonBuilder();
+    jb.add("status", status);
+    jb.addObj("body", body);
+    sendJsonResponse(jb.toString());
   }
 
   public void sendStreamResponse(String path) throws IOException {
