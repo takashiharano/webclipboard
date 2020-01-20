@@ -3,7 +3,7 @@ package com.takashiharano.webclp.action;
 import java.io.File;
 
 import com.takashiharano.util.FileUtil;
-import com.takashiharano.util.json.JsonBuilder;
+import com.takashiharano.util.JsonBuilder;
 import com.takashiharano.webclp.AppManager;
 import com.takashiharano.webclp.Config;
 import com.takashiharano.webclp.ProcessContext;
@@ -15,8 +15,7 @@ public class GetFileListAction extends Action {
     String uploadDir = AppManager.getAppHome() + "/" + Config.getValue("upload_dir");
     File[] files = FileUtil.listFiles(uploadDir);
     if (files == null) {
-      context.sendJson("ERR_FILE_LIST_IS_NULL", null);
-      return;
+      files = new File[0];
     }
 
     StringBuilder sb = new StringBuilder();
@@ -29,9 +28,9 @@ public class GetFileListAction extends Action {
       }
 
       JsonBuilder jb = new JsonBuilder();
-      jb.add("name", file.getName());
-      jb.add("size", file.length());
-      jb.add("lastModified", file.lastModified());
+      jb.append("name", file.getName());
+      jb.append("size", file.length());
+      jb.append("lastModified", file.lastModified());
 
       sb.append(jb.toString());
     }

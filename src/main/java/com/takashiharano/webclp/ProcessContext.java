@@ -15,8 +15,8 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import com.takashiharano.util.FileUtil;
+import com.takashiharano.util.JsonBuilder;
 import com.takashiharano.util.Log;
-import com.takashiharano.util.json.JsonBuilder;
 
 public class ProcessContext {
   private HttpServletRequest request;
@@ -83,8 +83,8 @@ public class ProcessContext {
 
   public void sendJson(String status, String body) throws IOException {
     JsonBuilder jb = new JsonBuilder();
-    jb.add("status", status);
-    jb.addObj("body", body);
+    jb.append("status", status);
+    jb.appendObject("body", body);
     sendJsonResponse(jb.toString());
   }
 

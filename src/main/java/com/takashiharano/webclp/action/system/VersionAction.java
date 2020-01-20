@@ -1,6 +1,6 @@
 package com.takashiharano.webclp.action.system;
 
-import com.takashiharano.util.json.JsonBuilder;
+import com.takashiharano.util.JsonBuilder;
 import com.takashiharano.webclp.AppManager;
 import com.takashiharano.webclp.ProcessContext;
 import com.takashiharano.webclp.action.Action;
@@ -12,8 +12,8 @@ public class VersionAction extends Action {
     String moduleName = AppManager.getModuleName();
     String version = AppManager.getVersionInfo(context);
     JsonBuilder jb = new JsonBuilder();
-    jb.add("module", moduleName);
-    jb.add("version", version);
+    jb.append("module", moduleName);
+    jb.append("version", version);
     context.sendJsonResponse(jb.toString());
   }
 
