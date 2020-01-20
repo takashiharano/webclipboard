@@ -6,6 +6,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.UnsupportedEncodingException;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 
 import javax.servlet.ServletContext;
@@ -60,6 +61,17 @@ public class ProcessContext {
 
   public String getRequestParameter(String key) {
     return request.getParameter(key);
+  }
+
+  public String getDecodedRequestParameter(String key) {
+    String value = getRequestParameter(key);
+    String decodedValue = null;
+    try {
+      decodedValue = URLDecoder.decode(value, "UTF-8");
+    } catch (UnsupportedEncodingException e) {
+      e.printStackTrace();
+    }
+    return decodedValue;
   }
 
   public void forward(String path) throws IOException, ServletException {
