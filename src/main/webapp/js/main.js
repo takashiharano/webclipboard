@@ -77,9 +77,10 @@ main.getFileList = function() {
     method: 'POST',
     data: {
       action: 'getFileList'
-    }
+    },
+    cb: main.getFileListCb
   };
-  util.http(req, main.getFileListCb);
+  util.http(req);
 };
 main.getFileListCb = function(xhr, res, req) {
   if (xhr.status != 200) {
@@ -87,13 +88,12 @@ main.getFileListCb = function(xhr, res, req) {
     util.infotip.show(xhr.status);
     return;
   }
-  var obj = util.fromJSON(res);
-  if (obj.status != 'OK') {
-    log.e(obj.status);
-    util.infotip.show(obj.status);
+  if (res.status != 'OK') {
+    log.e(res.status);
+    util.infotip.show(res.status);
     return;
   }
-  var fileList = obj.body;
+  var fileList = res.body;
 
   if (fileList.length == 0) {
     main.fileListArea.innerHTML = '<span style="display:inline-block;color:#888;margin-top;2px;">NO FILES</span>';
@@ -165,13 +165,12 @@ main.getTextCb = function(xhr, res, req) {
     util.infotip.show(xhr.status);
     return;
   }
-  var obj = util.fromJSON(res);
-  if (obj.status != 'OK') {
-    log.e(obj.status);
-    util.infotip.show(obj.status);
+  if (res.status != 'OK') {
+    log.e(res.status);
+    util.infotip.show(res.status);
     return;
   }
-  var text = util.decodeBase64(obj.body);
+  var text = util.decodeBase64(res.body);
   main.textArea.value = text;
 };
 
@@ -188,13 +187,12 @@ main.saveTextCb = function(xhr, res, req) {
     log.e(xhr.status);
     return;
   }
-  var obj = util.fromJSON(res);4
-  if (obj.status != 'OK') {
-    log.e(obj.status);
-    util.infotip.show(obj.status);
+  if (res.status != 'OK') {
+    log.e(res.status);
+    util.infotip.show(res.status);
     return;
   }
-  main.infotip(obj.status);
+  main.infotip(res.status);
 };
 main.clear = function() {
   util.dialog.yesno('Clear?', main._clear);
@@ -231,9 +229,10 @@ main.execServerAction = function(action, param, cb) {
   var req = {
     url: 'main',
     method: 'POST',
-    data: data
+    data: data,
+    cb: cb
   };
-  util.http(req, cb);
+  util.http(req);
 };
 
 main.infotip = function(msg, center) {

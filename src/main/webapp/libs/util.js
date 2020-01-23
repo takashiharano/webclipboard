@@ -5,7 +5,7 @@
  * https://github.com/takashiharano/util.js
  */
 var util = util || {};
-util.v = '202001062158';
+util.v = '202001232152';
 
 util.DFLT_FADE_SPEED = 500;
 util.LS_AVAILABLE = false;
@@ -114,9 +114,7 @@ util.DateTime.prototype = {
     this.WDAYS = wdays;
   },
   toString: function(fmt) {
-    if (!fmt) {
-      fmt = '%Y-%M-%D %H:%m:%S.%s';
-    }
+    if (!fmt) fmt = '%Y-%M-%D %H:%m:%S.%s';
     var s = fmt;
     s = s.replace(/%Y/, this.yyyy);
     s = s.replace(/%M/, this.mm);
@@ -218,40 +216,18 @@ util.Time = function(t) {
 };
 util.Time.prototype = {
   toString: function(fmt) {
-    if (!fmt) {
-      fmt = 'H:M:S.s';
-    }
-    var s = '';
-
-    if (fmt.match(/H/)) {
-      if (this.hours < 10) {
-        s += '0' + this.hours;
-      } else {
-        s += this.hours;
-      }
-    }
-
-    if (fmt.match(/M/)) {
-      if ((s != '') && (fmt.match(/:/))) {
-        s += ':';
-      }
-      s += ('0' + this.minutes).slice(-2);
-    }
-
-    if (fmt.match(/S/)) {
-      if ((s != '') && (fmt.match(/:/))) {
-        s += ':';
-      }
-      s += ('0' + this.seconds).slice(-2);
-    }
-
-    if (fmt.match(/s/)) {
-      if ((s != '') && (fmt.match(/\./))) {
-        s += '.';
-      }
-      s += ('00' + this.milliseconds).slice(-3);
-    }
-    return s;
+    if (!fmt) fmt = '%H:%m:%S.%s';
+    var h = this.hours;
+    if (h < 10) h = '0' + h;
+    var m = ('0' + this.minutes).slice(-2);
+    var s = ('0' + this.seconds).slice(-2);
+    var ms = ('00' + this.milliseconds).slice(-3);
+    var r = fmt;
+    r = r.replace(/%H/, h);
+    r = r.replace(/%m/, m);
+    r = r.replace(/%S/, s);
+    r = r.replace(/%s/, ms);
+    return r;
   }
 };
 
@@ -343,38 +319,30 @@ util.ClockTime.prototype = {
   // (HMS  ) '25:00:00'
   // (HMSs ) '25:00:00.000'
   // (HMSsD) '25:00:00.000'
-  toString: function(fmt, byTheDay) {
-    if (!fmt) {
-      fmt = 'HMSsD';
-    }
-    if (byTheDay === undefined) {
-      byTheDay = false;
-    }
-    var hh = this.toHoursStr(byTheDay);
-    var mi = this.toMinutesStr(byTheDay);
-    var ss = this.toSecondsStr(byTheDay);
+  toString: function(fmt) {
+    if (!fmt) fmt = '%H:%m:%S.%s (%d)';
+    var byTheDay = fmt.match(/%d/) != null;
+
+    var h = this.toHoursStr(byTheDay);
+    var m = this.toMinutesStr(byTheDay);
+    var s = this.toSecondsStr(byTheDay);
     var ms = this.toMillisecondsStr(byTheDay);
-    var s = '';
+
     if ((this.secs < 0) && !byTheDay) {
-      s += '-';
+      h = '-' + h;
     }
 
-    if (fmt.match(/H/)) {
-      s += hh;
+    var r = fmt;
+    r = r.replace(/%H/, h);
+    r = r.replace(/%m/, m);
+    r = r.replace(/%S/, s);
+    r = r.replace(/%s/, ms);
+
+    if (byTheDay && (this.days > 0)) {
+      var d = this.toDaysStr();
+      r = r.replace(/%d/, d);
     }
-    if (fmt.match(/M/)) {
-      s += ':' + mi;
-    }
-    if (fmt.match(/S/)) {
-      s += ':' + ss;
-    }
-    if (fmt.match(/s/)) {
-      s += '.' + ms;
-    }
-    if ((fmt.match(/D/)) && byTheDay && (this.days > 0)) {
-      s += ' (' + this.toDaysStr() + ')';
-    }
-    return s;
+    return r;
   },
 
   toDaysStr: function() {
@@ -435,25 +403,19 @@ util.ClockTime.prototype = {
 // Addition
 // '12:00' + '01:30' -> '13:30'
 // '12:00' + '13:00' -> '01:00 (+1 Day)' / '25:00'
-// fmt: 'HM'    -> '10:00'
-//      'HMS'   -> '10:00:00'
-//      'HMSs'  -> '10:00:00.000'
-//      'HMSsD' -> '10:00:00.000 (+1 Day)'
-util.addTimeStr = function(t1, t2, fmt, byTheDay) {
-  if (!fmt) {
-    fmt = 'HM';
-  }
-  if (byTheDay === undefined) {
-    byTheDay = false;
-  }
+// fmt:
+// '10:00:00.000 (+1 Day)'
+//  %H:%m:%S.%s (%d)
+util.addTimeStr = function(t1, t2, fmt) {
+  if (!fmt) fmt = '%H:%m';
   var t = util.addTime(t1, t2);
-  return t.toString(fmt, byTheDay);
+  return t.toString(fmt);
 };
 
 // Add time: Returns ClockTime object
 // '12:00' + '01:30' -> '13:30'
 // '12:00' + '13:00' -> '01:00 (+1 Day)' / '25:00'
-// util.addTime('10:00:00.000', '20:00:00.000').toString('HM', true);
+// util.addTime('10:00:00.000', '20:00:00.000').toString('%H:%m');
 util.addTime = function(t1, t2) {
   var s1 = util.time2sec(t1);
   var s2 = util.time2sec(t2);
@@ -474,25 +436,19 @@ util._addTime = function(t1, t2) {
 // Subtraction
 // '12:00' - '01:30' -> '10:30'
 // '12:00' - '13:00' -> '23:00 (-1 Day)' / '-01:00'
-// fmt: 'HM'    -> '10:00'
-//      'HMS'   -> '10:00:00'
-//      'HMSs'  -> '10:00:00.000'
-//      'HMSsD' -> '10:00:00.000 (-1 Day)'
-util.subTimeStr = function(t1, t2, fmt, byTheDay) {
-  if (!fmt) {
-    fmt = 'HM';
-  }
-  if (byTheDay === undefined) {
-    byTheDay = false;
-  }
+// fmt:
+// '10:00:00.000 (-1 Day)'
+//  %H:%m:%S.%s (%d)
+util.subTimeStr = function(t1, t2, fmt) {
+  if (!fmt) fmt = '%H:%m';
   var t = util.subTime(t1, t2);
-  return t.toString(fmt, byTheDay);
+  return t.toString(fmt);
 };
 
 // Sub time: Returns ClockTime object
 // '12:00' - '01:30' -> '10:30'
 // '12:00' - '13:00' -> '23:00 (-1 Day)' / '-01:00'
-// util.subTime('10:00:00.000', '20:00:00.000').toString('HM', true);
+// util.subTime('10:00:00.000', '20:00:00.000').toString('%H:%m');
 util.subTime = function(t1, t2) {
   var s1 = util.time2sec(t1);
   var s2 = util.time2sec(t2);
@@ -727,7 +683,41 @@ util.roundAngle = function(v) {
 };
 
 //-----------------------------------------------------------------------------
+util.random = function(min, max) {
+  min = parseInt(min);
+  max = parseInt(max);
+  if (isNaN(min)) {
+    min = 0;
+    max = 0x7fffffff;
+  } else if (isNaN(max)) {
+    max = min;
+    min = 0;
+  }
+  return parseInt(Math.random() * (max - min + 1)) + min;
+};
+
+util.getRandomString = function(min, max, tbl) {
+  var DFLT_MAX_LEN = 8;
+  if (!tbl) tbl = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  if (typeof tbl == 'string') tbl = tbl.split('');
+  if (min == undefined) {
+    min = DFLT_MAX_LEN;
+    max = min;
+  }
+  if (max == undefined) max = min;
+  var s = '';
+  var len = util.random(min, max);
+  if (tbl.length > 0) {
+    for (var i = 0; i < len; i++) {
+      s += tbl[Math.floor(Math.random() * tbl.length)];
+    }
+  }
+  return s;
+};
+
+//-----------------------------------------------------------------------------
 util.fromJSON = function(j, r) {
+  if (!j) return j;
   return JSON.parse(j, r);
 };
 
@@ -752,6 +742,18 @@ util.clearObject = function(key) {
   if (util.LS_AVAILABLE) {
     localStorage.removeItem(key);
   }
+};
+
+util.startsWith = function(s, p, o) {
+  if (o) s = s.substr(o);
+  if ((s == '') && (p == '')) return true;
+  if (p == '') return false;
+  return (s.substr(0, p.length) == p);
+};
+util.endsWith = function(s, p) {
+  if ((s == '') && (p == '')) return true;
+  if (p == '') return false;
+  return (s.substr(s.length - p.length) == p);
 };
 
 util.repeatCh = function(c, n) {
@@ -1187,24 +1189,39 @@ util.getUrlHash = function() {
 //  var req = {
 //    url: 'xxx',
 //    method: 'POST',
-//    data: param
+//    data: param,
+//    responseType: 'json',
+//    cb: callback,
+//    onsuccess: callback,
+//    onerror: callback
 //  };
 //
-//  util.http(req, callback);
+//  util.http(req);
 //
 //  callback = function(xhr, res, req) {
 //    if (xhr.status != 200) {
 //      return;
 //    }
 //  };
-util.http = function(rq, cb) {
+util.http = function(rq) {
+  var trc = util.http.trace;
+  var trcid = util.getRandomString(8, 8, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789');
+  rq.trcid = trcid;
   if (!rq.method) rq.method = 'GET';
   var data = null;
   if ((rq.data != undefined) && (rq.data != '')) {
     data = rq.data;
-    if (data instanceof Object) {
-      data = util.http.buildParam(data);
+  }
+  if (trc) {
+    if (!data) data = {};
+    if (typeof data == 'string') {
+      data += '&_trcid=' + trcid;
+    } else {
+      data._trcid = trcid;
     }
+  }
+  if (data instanceof Object) {
+    data = util.http.buildParam(data);
   }
   var url = rq.url;
   if (data && (rq.method == 'GET')) {
@@ -1226,9 +1243,21 @@ util.http = function(rq, cb) {
           }
         }
         m = util.escHTML(m);
-        util._log.v('<= ' + m);
+        util._log.v('<= [' + trcid + '] ' + m);
       }
-      if (cb) cb(xhr, res, rq);
+      if (xhr.status == 200) {
+        var ct = xhr.getResponseHeader('Content-Type');
+        if (ct) ct = ct.split(';')[0];
+        if ((rq.responseType == 'json') || ((!rq.responseType) && (ct == 'application/json'))) {
+          res = util.fromJSON(res);
+        }
+      }
+      if (rq.cb) rq.cb(xhr, res, rq);
+      if (((xhr.status >= 200) && (xhr.status < 300)) || (xhr.status == 304)) {
+        if (rq.onsuccess) rq.onsuccess(xhr, res, rq);
+      } else {
+        if (rq.onerror) rq.onerror(xhr, res, rq);
+      }
     }
   };
   xhr.open(rq.method, url, rq.async, rq.user, rq.pass);
@@ -1248,7 +1277,7 @@ util.http = function(rq, cb) {
     xhr.setRequestHeader('Authorization', 'Basic ' + c);
   }
   if (util.http.log) {
-    util._log.v('=> ' + rq.url);
+    util._log.v('=> [' + trcid + '] ' + rq.url);
     if (data) util._log.v('[DATA] ' + data.substr(0, util.http.logLen));
   }
   xhr.send(data);
@@ -1270,6 +1299,7 @@ util.http.buildParam = function(p) {
 util.http.log = false;
 util.http.LOG_LIMIT = 3145728;
 util.http.logMaxLen = 4096;
+util.http.trace = false;
 
 //-----------------------------------------------------------------------------
 util.infotip = {};
