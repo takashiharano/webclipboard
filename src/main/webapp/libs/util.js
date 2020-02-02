@@ -5,7 +5,7 @@
  * https://github.com/takashiharano/util.js
  */
 var util = util || {};
-util.v = '202001232152';
+util.v = '202001312250';
 
 util.DFLT_FADE_SPEED = 500;
 util.LS_AVAILABLE = false;
@@ -725,6 +725,12 @@ util.toJSON = function(o, r, s) {
   return JSON.stringify(o, r, s);
 };
 
+util.copyProps = function(src, dst) {
+  for (var k in src) {
+    dst[k] = src[k];
+  }
+};
+
 util.loadObject = function(key) {
   if (util.LS_AVAILABLE) {
     return JSON.parse(localStorage.getItem(key));
@@ -744,16 +750,48 @@ util.clearObject = function(key) {
   }
 };
 
-util.startsWith = function(s, p, o) {
+/**
+ * startsWith(string, pattern, position)
+ * startsWith(string, pattern, case-insensitive)
+ * startsWith(string, pattern, position, case-insensitive)
+ */
+util.startsWith = function(s, p, a3, a4) {
+  var a = [a3, a4];
+  var o = 0;
+  var i = 0;
+  if (typeof a3 == 'number') {
+    o = a3;
+    i++;
+  }
+  var ci = a[i];
   if (o) s = s.substr(o);
   if ((s == '') && (p == '')) return true;
   if (p == '') return false;
-  return (s.substr(0, p.length) == p);
+  var f = (ci ? 'i' : '');
+  var re = new RegExp('^' + p, f);
+  return s.match(re) != null;
 };
-util.endsWith = function(s, p) {
+
+/**
+ * endsWith(string, pattern, length)
+ * endsWith(string, pattern, case-insensitive)
+ * endsWith(string, pattern, length, case-insensitive)
+ */
+util.endsWith = function(s, p, a3, a4) {
+  var a = [a3, a4];
+  var l = 0;
+  var i = 0;
+  if (typeof a3 == 'number') {
+    l = a3;
+    i++;
+  }
+  var ci = a[i];
+  if (l) s = s.substr(0, l);
   if ((s == '') && (p == '')) return true;
   if (p == '') return false;
-  return (s.substr(s.length - p.length) == p);
+  var f = (ci ? 'i' : '');
+  var re = new RegExp(p + '$', f);
+  return s.match(re) != null;
 };
 
 util.repeatCh = function(c, n) {
@@ -1181,36 +1219,49 @@ util.getUrlHash = function() {
 //-----------------------------------------------------------------------------
 // HTTP
 //-----------------------------------------------------------------------------
-//  var param = {
-//    key1: val1,
-//    key2: val2
-//  };
-//
-//  var req = {
-//    url: 'xxx',
-//    method: 'POST',
-//    data: param,
-//    responseType: 'json',
-//    cb: callback,
-//    onsuccess: callback,
-//    onerror: callback
-//  };
-//
-//  util.http(req);
-//
-//  callback = function(xhr, res, req) {
-//    if (xhr.status != 200) {
-//      return;
-//    }
-//  };
-util.http = function(rq) {
+/**
+ *  var param = {
+ *    key1: val1,
+ *    key2: val2
+ *  };
+ *
+ *  var req = {
+ *    url: 'xxx',
+ *    method: 'POST',
+ *    data: param,
+ *    responseType: 'json',
+ *    cb: callback,
+ *    onsuccess: callback,
+ *    onerror: callback
+ *  };
+ *
+ *  util.http(req);
+ *
+ *  callback = function(xhr, res, req) {
+ *    if (xhr.status != 200) {
+ *      return;
+ *    }
+ *  };
+ */
+util.http = function(req) {
   var trc = util.http.trace;
   var trcid = util.getRandomString(8, 8, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789');
-  rq.trcid = trcid;
-  if (!rq.method) rq.method = 'GET';
+  req.trcid = trcid;
+  if (util.http.conn == 0) {
+    util.http.onStart();
+  }
+  if (!util.http.onB4Send(req)) {
+    if (util.http.conn == 0) {
+      util.http.onStop();
+    }
+    return;
+  }
+  util.http.conn++;
+  if (!req.method) req.method = 'GET';
+  req.method = req.method.toUpperCase();
   var data = null;
-  if ((rq.data != undefined) && (rq.data != '')) {
-    data = rq.data;
+  if ((req.data != undefined) && (req.data != '')) {
+    data = req.data;
   }
   if (trc) {
     if (!data) data = {};
@@ -1223,83 +1274,139 @@ util.http = function(rq) {
   if (data instanceof Object) {
     data = util.http.buildParam(data);
   }
-  var url = rq.url;
-  if (data && (rq.method == 'GET')) {
+  var url = req.url;
+  if (data && (req.method == 'GET')) {
     url += '?' + data;
+    data = null;
   }
-  if (rq.async == undefined) rq.async = true;
-  rq.method = rq.method.toUpperCase();
+  if (req.async == undefined) req.async = true;
   var xhr = new XMLHttpRequest();
   xhr.onreadystatechange = function() {
     if (xhr.readyState == XMLHttpRequest.DONE) {
-      var res = xhr.responseText;
-      if (util.http.log) {
-        var m = res;
-        if (m) {
-          if (m.length > util.http.LOG_LIMIT) {
-            m = '(size=' + m.length + ')';
-          } else if (m.length > util.http.logMaxLen) {
-            m = m.substr(0, util.http.logMaxLen) + '...';
-          }
-        }
-        m = util.escHTML(m);
-        util._log.v('<= [' + trcid + '] ' + m);
-      }
-      if (xhr.status == 200) {
-        var ct = xhr.getResponseHeader('Content-Type');
-        if (ct) ct = ct.split(';')[0];
-        if ((rq.responseType == 'json') || ((!rq.responseType) && (ct == 'application/json'))) {
-          res = util.fromJSON(res);
-        }
-      }
-      if (rq.cb) rq.cb(xhr, res, rq);
-      if (((xhr.status >= 200) && (xhr.status < 300)) || (xhr.status == 304)) {
-        if (rq.onsuccess) rq.onsuccess(xhr, res, rq);
-      } else {
-        if (rq.onerror) rq.onerror(xhr, res, rq);
-      }
+      util.http.onDone(xhr, req);
     }
   };
-  xhr.open(rq.method, url, rq.async, rq.user, rq.pass);
+  xhr.open(req.method, url, req.async, req.user, req.pass);
   var contentType = 'application/x-www-form-urlencoded';
-  if (rq.contentType) {
-    contentType = rq.contentType;
+  if (req.contentType) {
+    contentType = req.contentType;
   }
   xhr.setRequestHeader('Content-Type', contentType);
-  if (!rq.cache) {
+  if (!req.cache) {
     xhr.setRequestHeader('If-Modified-Since', 'Thu, 01 Jun 1970 00:00:00 GMT');
   }
-  if (rq.userAgent) {
-    xhr.setRequestHeader('User-Agent', rq.userAgent);
+  for (var k in req.headers) {
+    xhr.setRequestHeader(k, req.headers[k]);
   }
-  if (rq.user && rq.pass) {
-    var c = util.encodeB64(rq.user + ':' + rq.pass);
-    xhr.setRequestHeader('Authorization', 'Basic ' + c);
+  if (req.withCredentials) {
+    xhr.withCredentials = true;
   }
-  if (util.http.log) {
-    util._log.v('=> [' + trcid + '] ' + rq.url);
-    if (data) util._log.v('[DATA] ' + data.substr(0, util.http.logLen));
+  if (util.http.logging) {
+    util._log.v('=> [' + trcid + '] ' + req.url);
+    if (data) util._log.v('[DATA] ' + data.substr(0, util.http.MAX_LOG_LEN));
   }
   xhr.send(data);
 };
-
+util.http.onDone = function(xhr, req) {
+  var res = xhr.responseText;
+  if (util.http.logging) {
+    var m = res;
+    if (m) {
+      if (m.length > util.http.LOG_LIMIT) {
+        m = '(size=' + m.length + ')';
+      } else if (m.length > util.http.MAX_LOG_LEN) {
+        m = m.substr(0, util.http.MAX_LOG_LEN) + '...';
+      }
+    }
+    m = util.escHTML(m);
+    util._log.v('<= [' + req.trcid + '] ' + m);
+  }
+  if (util.http.onReceive(xhr, res, req)) {
+    if (xhr.status == 200) {
+      if (util.jsonable(xhr, req)) {
+        res = util.fromJSON(res);
+      }
+    }
+    if (req.cb) req.cb(xhr, res, req);
+    if (((xhr.status >= 200) && (xhr.status < 300)) || (xhr.status == 304)) {
+      if (req.onsuccess) req.onsuccess(xhr, res, req);
+    } else {
+      util.http.onError(xhr, res, req);
+      if (req.onerror) req.onerror(xhr, res, req);
+    }
+  }
+  util.http.conn--;
+  if (util.http.conn == 0) {
+    util.http.onStop();
+  }
+};
+util.jsonable = function(xhr, req) {
+  var ct = xhr.getResponseHeader('Content-Type');
+  if (ct) ct = ct.split(';')[0];
+  if ((req.responseType == 'json') || ((!req.responseType) && (ct == 'application/json'))) {
+    return true;
+  }
+  return false;
+};
 util.http.buildParam = function(p) {
   var s = '';
   var cnt = 0;
-  for (var key in p) {
+  for (var k in p) {
     if (cnt > 0) {
       s += '&';
     }
-    s += key + '=' + encodeURIComponent(p[key]);
+    s += k + '=' + encodeURIComponent(p[k]);
     cnt++;
   }
   return s;
 };
 
-util.http.log = false;
+/**
+ * addListener('start|stop|error', fn);
+ */
+util.http.addListener = function(type, fn) {
+  if (util.http.listeners[type]) {
+    util.http.listeners[type].push(fn);
+  }
+};
+util.http.onStart = function() {
+  util.http.callListeners('start');
+};
+util.http.onB4Send = function(req) {
+  return util.http.callListeners('beforesend', req);
+};
+util.http.onReceive = function(xhr, res, req) {
+  return util.http.callListeners('receive', xhr, res, req);
+};
+util.http.onStop = function() {
+  util.http.callListeners('stop');
+};
+util.http.onError = function(xhr, res, req) {
+  util.http.callListeners('error', xhr, res, req);
+};
+util.http.callListeners = function(type, a1, a2, a3) {
+  var listeners = util.http.listeners[type];
+  for (var i = 0; i < listeners.length; i++) {
+    var f = listeners[i];
+    if (f(a1, a2, a3) === false) return false;
+  }
+  return true;
+};
+util.http.countConnections = function() {
+  return util.http.conn;
+};
 util.http.LOG_LIMIT = 3145728;
-util.http.logMaxLen = 4096;
+util.http.MAX_LOG_LEN = 4096;
+util.http.logging = false;
 util.http.trace = false;
+util.http.conn = 0;
+util.http.listeners = {
+  start: [],
+  beforesend: [],
+  receive: [],
+  stop: [],
+  error: []
+};
 
 //-----------------------------------------------------------------------------
 util.infotip = {};
@@ -1915,7 +2022,6 @@ util._registerStyle = function() {
   style += '}';
   style += '.pseudo-link {';
   style += 'cursor: pointer;';
-  style += 'color: #00c;';
   style += '}';
   style += '.pseudo-link:hover {';
   style += 'text-decoration: underline;';
@@ -2027,22 +2133,15 @@ util.loader._hide = function() {
 // Modal
 //-----------------------------------------------------------------------------
 util.MODAL_ZINDEX = 1000;
-util.modal = function(child, addCloseHandler, style) {
+util.modal = function(child, addCloseHandler) {
   this.sig = 'modal';
   var el = document.createElement('div');
-  var dfltStyle = {
-    'position': 'fixed',
-    'top': '0',
-    'left': '0',
-    'width': '100vw',
-    'height': '100vh',
-    'background': 'rgba(0,0,0,0.6)',
-    'z-index': util.MODAL_ZINDEX
-  };
-  util.setStyles(el, dfltStyle);
-  if (style) {
-    util.setStyles(el, style);
+  var style = {};
+  util.copyProps(util.modal.DFLT_STYLE, style);
+  if (util.modal.style) {
+    util.copyProps(util.modal.style, style);
   }
+  util.setStyles(el, style);
   el.style.opacity = '0';
   if (addCloseHandler) {
     el.addEventListener('click', this.onClick);
@@ -2092,54 +2191,91 @@ util.modal.prototype = {
     }
   }
 };
-util.modal.show = function(el, closeAnywhere, style) {
-  var m = new util.modal(el, closeAnywhere, style).show();
+util.modal.show = function(el, closeAnywhere) {
+  var m = new util.modal(el, closeAnywhere).show();
   return m;
 };
+util.modal.setStyle = function(s) {
+  util.modal.style = s;
+};
+util.modal.DFLT_STYLE = {
+  'position': 'fixed',
+  'top': '0',
+  'left': '0',
+  'min-width': '100vw',
+  'min-height': '100vh',
+  'width': '100%',
+  'height': '100%',
+  'background': 'rgba(0,0,0,0.6)',
+  'z-index': util.MODAL_ZINDEX
+};
+util.modal.style = null;
 
 //-----------------------------------------------------------------------------
 // Dialog
 //-----------------------------------------------------------------------------
 /**
- * opt {
+ * content: HTML|DOM
+ *
+ * opt = {
+ *   title: 'Title',
+ *   buttons = [
+ *     {
+ *       label: 'Yes',
+ *       cb: function1
+ *     },
+ *     {
+ *       label: 'No',
+ *       cb: function2
+ *     }
+ *   ],
  *   style: {
- *     name: value,
- *     ...
- *   },
- *   modal: {
- *     closeAnywhere: true|false,
- *     style: {
+ *     body: {
  *       name: value,
  *       ...
+ *     },
+ *     title: {
+ *       ...
+ *     },
+ *     content: {
+ *       ...
+ *     },
+ *     button: {
+ *       ...
  *     }
- *   }
+ *   },
+ *   closeAnywhere: true|false
+ *   data: object
  * }
+ *
+ * style:
+ *  dialog
+ *  dialog-title
+ *  dialog-content
+ *  dialog-button
  */
-util.dialog = function(content, buttons, opt, title, cbData) {
+util.dialog = function(content, opt) {
   var ctx = this;
-  ctx.cbData = cbData;
-  var body = ctx.createDialogBody(ctx, content, buttons, opt, title);
-  ctx.el = ctx.create(ctx, body, opt);
+  ctx.opt = opt;
+  var o = ctx.createDialogBody(ctx, content, opt);
+  ctx.el = ctx.create(ctx, o.boby, opt);
+  ctx.btnEls = o.btnEls;
 
   var closeAnywhere = false;
-  var modalStyle;
   if (opt) {
-    var modalOpt = opt.modal;
-    if (modalOpt) {
-      if (modalOpt.closeAnywhere) {
-        closeAnywhere = true;
-      }
-      modalStyle = modalOpt.style;
+    if (opt.closeAnywhere) {
+      closeAnywhere = true;
     }
   }
 
-  ctx.modal = util.modal.show(ctx.el, closeAnywhere, modalStyle);
+  ctx.modal = util.modal.show(ctx.el, closeAnywhere);
   setTimeout(util.dialog.focusBtn, 10);
 };
 util.dialog.prototype = {
   create: function(ctx, body, opt) {
     var base = document.createElement('div');
     var style = {
+      'display': 'table',
       'position': 'fixed',
       'border-radius': '3px',
       'padding': util.dialog.PADDING + 'px',
@@ -2149,9 +2285,9 @@ util.dialog.prototype = {
     };
     util.setStyles(base, style);
 
-    if (opt && opt.style) {
-      for (var key in opt.style) {
-        util.setStyle(base, key, opt.style[key]);
+    if (opt && opt.style && opt.style.body) {
+      for (var key in opt.style.body) {
+        util.setStyle(base, key, opt.style.body[key]);
       }
     }
     base.appendChild(body);
@@ -2161,21 +2297,40 @@ util.dialog.prototype = {
     return base;
   },
 
-  createDialogBody: function(ctx, content, buttons, opt, title) {
+  createDialogBody: function(ctx, content, opt) {
     var body = document.createElement('div');
-    var style;
+    body.className = 'dialog';
+    var style = {
+      'display': 'table-cell',
+      'vertical-align': 'middle',
+      'text-align': 'center'
+    };
+    util.setStyles(body, style);
+    var title;
+    var buttons;
+    if (opt) {
+      title = opt.title;
+      buttons = opt.buttons;
+    }
     if (title) {
       var titleArea = document.createElement('div');
+      titleArea.className = 'dialog-title';
       titleArea.innerHTML = title;
       style = {
         'margin-bottom': '0.5em',
         'font-weight': 'bold'
       };
       util.setStyles(titleArea, style);
+      if (opt && opt.style && opt.style.title) {
+        for (var key in opt.style.title) {
+          util.setStyle(titleArea, key, opt.style.title[key]);
+        }
+      }
       body.appendChild(titleArea);
     }
 
     var contentArea = document.createElement('pre');
+    contentArea.className = 'dialog-content';
     if (title) {
       style = {'margin': '0'};
     } else {
@@ -2188,8 +2343,14 @@ util.dialog.prototype = {
     } else {
       contentArea.appendChild(content);
     }
+    if (opt && opt.style && opt.style.content) {
+      for (key in opt.style.content) {
+        util.setStyle(contentArea, key, opt.style.content[key]);
+      }
+    }
     body.appendChild(contentArea);
 
+    var btnEls = [];
     if (buttons) {
       for (var i = 0; i < buttons.length; i++) {
         var button = buttons[i];
@@ -2202,17 +2363,27 @@ util.dialog.prototype = {
           style['margin-left'] = '0.5em';
         }
         util.setStyles(btnEl, style);
-        btnEl.className = 'dialog-btn';
-        btnEl.addEventListener('click', ctx.defaultBtnCb);
+        if (opt && opt.style && opt.style.button) {
+          for (key in opt.style.button) {
+            util.setStyle(btnEl, key, opt.style.button[key]);
+          }
+        }
+        btnEl.className = 'dialog-button';
+        btnEl.addEventListener('click', util.dialog.btnCb);
         btnEl.innerText = button.label;
         btnEl.cb = button.cb;
         btnEl.ctx = ctx;
         body.appendChild(btnEl);
-        if (button.focus) util.dialog.focusTargetBtn = btnEl;
+        if (button.focus) util.dialog.initFocusEl = btnEl;
+        btnEls.push(btnEl);
       }
     }
-
-    return body;
+    if (opt.focusEl) util.dialog.initFocusEl = opt.focusEl;
+    var ret = {
+      boby: body,
+      btnEls: btnEls
+    };
+    return ret;
   },
 
   close: function(ctx) {
@@ -2222,22 +2393,15 @@ util.dialog.prototype = {
 
   center: function(ctx) {
     util.center(ctx.el);
-  },
-
-  defaultBtnCb: function(e) {
-    var el = e.target;
-    var ctx = el.ctx;
-    ctx.close(ctx);
-    if (el.cb) el.cb(ctx, ctx.cbData);
   }
 };
 util.dialog.PADDING = 10;
 util.dialog.instances = [];
-util.dialog.focusTargetBtn = null;
+util.dialog.initFocusEl = null;
 util.dialog.focusBtn = function() {
-  if (util.dialog.focusTargetBtn) {
-    util.dialog.focusTargetBtn.focus();
-    util.dialog.focusTargetBtn = null;
+  if (util.dialog.initFocusEl) {
+    util.dialog.initFocusEl.focus();
+    util.dialog.initFocusEl = null;
   }
 };
 util.dialog.getTopDialog = function() {
@@ -2258,15 +2422,16 @@ util.dialog.show = function() {
   util.dialog.adjust();
 };
 
-// buttons = [
-//   {
-//     label: 'Yes',
-//     focus: true,
-//     cb: cbYes
-//   },
-//   ...
-// ];
 // opt = {
+//   title: 'Title',
+//   buttons = [
+//     {
+//       label: 'Yes',
+//       focus: true,
+//       cb: cbYes
+//     },
+//     ...
+//   ],
 //   style: {
 //     styles
 //   },
@@ -2276,105 +2441,356 @@ util.dialog.show = function() {
 //       name: value,
 //       ...
 //     }
-//   }
+//   },
+//   data: object
 // }
-util.dialog.open = function(content, buttons, opt, title, cbData) {
-  var DEFAULT_OPT = {
-    style: {
-      'min-width': '200px',
-      'min-height': '50px',
-      'text-align': 'center'
-    }
+util.dialog.open = function(content, opt) {
+  var DEFAULT_STYLE = {
+    'min-width': '180px',
+    'min-height': '50px',
+    'text-align': 'center'
   };
-  if (!opt) {
-    opt = DEFAULT_OPT;
+  if (!opt) opt = {};
+  if (!opt.style) {
+    opt.style = {
+      body: DEFAULT_STYLE
+    };
   }
-
-  var dialog = new util.dialog(content, buttons, opt, title, cbData);
+  var dialog = new util.dialog(content, opt);
   util.dialog.instances.push(dialog);
-
   return dialog;
 };
 
-util.dialog.close = function() {
+util.dialog.btnCb = function(e) {
+  util.dialog.instances.pop();
+  var el = e.target;
+  util.dialog.btnHandler(el);
+};
+
+util.dialog.btnHandler = function(el) {
+  var ctx = el.ctx;
+  ctx.close(ctx);
+  var data;
+  if (ctx.opt) data = ctx.opt.data;
+  if (el.cb) el.cb(data);
+};
+
+util.dialog.close = function(btnIdx) {
   var dialog = util.dialog.instances.pop();
   if (dialog) {
-    dialog.close(dialog);
+    if (btnIdx == undefined) {
+      dialog.close(dialog);
+    } else {
+      var b = dialog.btnEls[btnIdx];
+      if (b) {
+        util.dialog.btnHandler(b);
+      } else {
+        dialog.close(dialog);
+      }
+    }
   }
 };
 
-//-----------------------------------------------------------------------------
-/**
- * util.dialog.ok('message');
- * util.dialog.ok('message', null, 'title');
- * util.dialog.ok('message', cb, 'title');
- * util.dialog.ok('message', cb, 'title', cbData);
- */
-util.dialog.ok = function(content, cb, title, cbData, opt) {
-  var buttons = [
-    {
-      label: 'OK',
-      focus: true,
-      cb: cb
-    }
-  ];
-  content = util.convertNewLine(content, '<br>');
-  util.dialog.open(content, buttons, opt, title, cbData);
+util.dialog.count = function() {
+  return util.dialog.instances.length;
 };
 
 //-----------------------------------------------------------------------------
 /**
- * util.dialog.yesno('message', cb);
- * util.dialog.yesno('message', cb, 'title');
- * util.dialog.yesno('message', cb, 'title', cbData);
- * util.dialog.yesno('message', cb, 'title', cbData, true);
+ * util.dialog.info('message');
+ * util.dialog.info('title', 'message');
+ * util.dialog.info('message', cb);
+ * util.dialog.info('title', 'message', cb);
+ * util.dialog.info('message', opt);
+ * util.dialog.info('title', 'message', opt);
+ * util.dialog.info('message', cb, opt);
+ * util.dialog.info('title', 'message', cb, opt);
  *
- * cb = function(yes, cbData) {
- *   if (yes) {
- *     // Yes
- *   } else {
- *     // No
+ * opt = {
+ *   focus: 'yes'|'no',
+ *   data: object,
+ *   style: {
+ *     message: {
+ *       ...
+ *     }
  *   }
  * };
+ *
+ * cb = function(data) {}
+ *
+ * class:
+ *  dialog
+ *  dialog-title
+ *  dialog-content
+ *  dialog-button
  */
-util.dialog.yesno = function(content, cb, title, cbData, focusNo, opt) {
-  var dialog = new util.dialog.yesnoDialog(content, cb, title, cbData, focusNo, opt);
+util.dialog.info = function(a1, a2, a3, a4) {
+  var a = [a1, a2, a3, a4];
+  var title;
+  var msg = a1;
+  var cb = (typeof a2 == 'function' ? a2 : null);
+  var opt = {};
+  var i = 1;
+  if (typeof a2 == 'string') {
+    title = a1;
+    msg = a2;
+    i++;
+    if (typeof a3 == 'function') {
+      cb = a3;
+      i++;
+    } else {
+      cb = null;
+    }
+  }
+  if (a[i]) {
+    opt = a[i];
+  }
+  var dialogOpt = {
+    title: title,
+    buttons: [
+      {
+        label: 'OK',
+        focus: true,
+        cb: cb
+      }
+    ],
+    style: opt.style
+  };
+  msg = util.convertNewLine(msg, '<br>');
+  var content = document.createElement('div');
+  content.style.display = 'inline-block';
+  if (opt.style && opt.style.message) {
+    for (var key in opt.style.message) {
+      util.setStyle(content, key, opt.style.message[key]);
+    }
+  }
+  content.innerHTML = msg;
+  util.dialog.open(content, dialogOpt);
+};
+
+//-----------------------------------------------------------------------------
+/**
+ * util.dialog.confirm('message', cbYes);
+ * util.dialog.confirm('message', cbYes, cbNo);
+ * util.dialog.confirm('message', cbYes, opt);
+ * util.dialog.confirm('message', cbYes, cbNo, opt);
+ * util.dialog.confirm('title', 'message', cbYes);
+ * util.dialog.confirm('title', 'message', cbYes, cbNo);
+ * util.dialog.confirm('title', 'message', cbYes, opt);
+ * util.dialog.confirm('title', 'message', cbYes, cbNo, opt);
+ *
+ * opt = {
+ *   focus: 'yes'|'no',
+ *   data: object,
+ *   style: {
+ *     message: {
+ *       ...
+ *     }
+ *   }
+ * };
+ *
+ * cb = function(data) {}
+ *
+ * class:
+ *  dialog
+ *  dialog-title
+ *  dialog-content
+ *  dialog-button
+ */
+util.dialog.confirm = function(a1, a2, a3, a4, a5) {
+  var a = [a1, a2, a3, a4, a5];
+  var title;
+  var msg = a1;
+  var cbY = null;
+  var cbN = null;
+  var opt = {};
+  var i = 1;
+  var j = 2;
+  var k = 3;
+  if (typeof a2 == 'string') {
+    title = a1;
+    msg = a2;
+    i++; j++; k++;
+  }
+  if (typeof a[i] == 'function') {
+    cbY = a[i];
+  } else {
+    j--; k--;
+  }
+  if (typeof a[j] == 'function') {
+    cbN = a[j];
+  } else {
+    k--;
+  }
+  if (a[k]) {
+    opt = a[k];
+  }
+  var definition = {
+    labelY: 'Yes',
+    labelN: 'No',
+    cbY: util.dialog.sysCbY,
+    cbN: util.dialog.sysCbN,
+  };
+  msg = util.convertNewLine(msg, '<br>');
+  var content = document.createElement('div');
+  content.style.display = 'inline-block';
+  if (opt.style && opt.style.message) {
+    for (var key in opt.style.message) {
+      util.setStyle(content, key, opt.style.message[key]);
+    }
+  }
+  content.innerHTML = msg;
+
+  var dialog = new util.dialog.confirmDialog(title, content, definition, opt);
+  dialog.cbY = cbY;
+  dialog.cbN = cbN;
   return dialog;
 };
-util.dialog.yesnoDialog = function(content, cb, title, cbData, focusNo, opt) {
+util.dialog.confirmDialog = function(title, content, definition, opt) {
   var ctx = this;
-  ctx.cb = cb;
-
+  ctx.data = opt.data;
   var buttons = [
     {
-      label: 'Yes',
-      cb: ctx.yesnoCbY
+      label: definition.labelY,
+      cb: definition.cbY
     },
     {
-      label: 'No',
-      cb: ctx.yesnoCbN
+      label: definition.labelN,
+      cb: definition.cbN
     }
   ];
-
   var focusIdx = 0;
-  if (focusNo) {
+  if (opt.focus == 'no') {
     focusIdx = 1;
   }
   buttons[focusIdx].focus = true;
-
-  content = util.convertNewLine(content, '<br>');
-  var dialog = util.dialog.open(content, buttons, opt, title, cbData);
-  dialog.yesNoCtx = ctx;
+  var dialogOpt = {
+    title: title,
+    buttons: buttons,
+    data: ctx,
+    focusEl: definition.focusEl, // prior
+    style: opt.style
+  };
+  util.dialog.open(content, dialogOpt);
 };
-util.dialog.yesnoDialog.prototype = {
-  yesnoCbY: function(ctx, cbData) {
-    var yesNoCtx = ctx.yesNoCtx;
-    if (yesNoCtx.cb) yesNoCtx.cb(true, cbData);
-  },
-  yesnoCbN: function(ctx, cbData) {
-    var yesNoCtx = ctx.yesNoCtx;
-    if (yesNoCtx.cb) yesNoCtx.cb(false, cbData);
+util.dialog.sysCbY = function(ctx) {
+  if (ctx.cbY) ctx.cbY(ctx.data);
+};
+util.dialog.sysCbN = function(ctx) {
+  if (ctx.cbN) ctx.cbN(ctx.data);
+};
+
+//-----------------------------------------------------------------------------
+/**
+ * util.dialog.text('message', cbOK);
+ * util.dialog.text('message', cbOK, cbCancel);
+ * util.dialog.text('message', cbOK, opt);
+ * util.dialog.text('message', cbOK, cbCancel, opt);
+ * util.dialog.text('title', 'message', cbOK);
+ * util.dialog.text('title', 'message', cbOK, cbCancel);
+ * util.dialog.text('title', 'message', cbOK, opt);
+ * util.dialog.text('title', 'message', cbOK, cbCancel, opt);
+ *
+ * opt = {
+ *   data: object,
+ *   secure: true|false,
+ *   style: {
+ *     message: {
+ *       ...
+ *     },
+ *     textbox: {
+ *       ...
+ *     }
+ *   }
+ * };
+ *
+ * cb = function(data) {}
+ *
+ * class:
+ *  dialog
+ *  dialog-title
+ *  dialog-content
+ *  dialog-button
+ *  dialog-textbox
+ */
+util.dialog.text = function(a1, a2, a3, a4, a5) {
+  var a = [a1, a2, a3, a4, a5];
+  var title;
+  var msg = a1;
+  var cbY = null;
+  var cbN = null;
+  var opt = {};
+  var i = 1;
+  var j = 2;
+  var k = 3;
+  if (typeof a2 == 'string') {
+    title = a1;
+    msg = a2;
+    i++; j++; k++;
   }
+  if (typeof a[i] == 'function') {
+    cbY = a[i];
+  } else {
+    j--; k--;
+  }
+  if (typeof a[j] == 'function') {
+    cbN = a[j];
+  } else {
+    k--;
+  }
+  if (a[k]) {
+    opt = a[k];
+  }
+  var txtBox = document.createElement('input');
+  if (opt.secure) {
+    txtBox.type = 'password';
+  } else {
+    txtBox.type = 'text';
+  }
+  txtBox.className = 'dialog-textbox';
+  if (opt && opt.style && opt.style.textbox) {
+    for (var key in opt.style.textbox) {
+      util.setStyle(txtBox, key, opt.style.textbox[key]);
+    }
+  }
+  var body = document.createElement('div');
+  var wrp1 = document.createElement('div');
+  wrp1.style.display = 'inline-block';
+  if (opt.style && opt.style.message) {
+    for (key in opt.style.message) {
+      util.setStyle(wrp1, key, opt.style.message[key]);
+    }
+  }
+  var wrp2 = document.createElement('div');
+  wrp2.style.marginTop = '8px';
+  if (typeof msg == 'string') {
+    wrp1.innerHTML = msg;
+  } else {
+    wrp1.appendChild(msg);
+  }
+  wrp2.appendChild(txtBox);
+  body.appendChild(wrp1);
+  body.appendChild(wrp2);
+  var definition = {
+    labelY: 'OK',
+    labelN: 'Cancel',
+    cbY: util.dialog.text.sysCbOK,
+    cbN: util.dialog.text.sysCbCancel,
+    focusEl: txtBox
+  };
+  var dialog = new util.dialog.confirmDialog(title, body, definition, opt);
+  dialog.cbY = cbY;
+  dialog.cbN = cbN;
+  dialog.txtBox = txtBox;
+  return dialog;
+};
+util.dialog.text.sysCbOK = function(ctx) {
+  var text = ctx.txtBox.value;
+  if (ctx.cbY) ctx.cbY(text, ctx.data);
+};
+util.dialog.text.sysCbCancel = function(ctx) {
+  var text = ctx.txtBox.value;
+  if (ctx.cbN) ctx.cbN(text, ctx.data);
 };
 
 //-----------------------------------------------------------------------------

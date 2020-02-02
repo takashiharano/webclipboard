@@ -123,12 +123,9 @@ main.getFileListCb = function(xhr, res, req) {
 
 
 main.deleteAll = function() {
-  util.dialog.yesno('Delete all files?', main._deleteAll);
+  util.dialog.confirm('Delete all files?', main._deleteAll);
 };
-main._deleteAll = function(yes) {
-  if (!yes) {
-    return;
-  }
+main._deleteAll = function() {
   var param = null;
   main.execServerAction('deleteAll', param, main.deleteAllCb);
 };
@@ -139,13 +136,10 @@ main.deleteAllCb = function(xhr, res, req) {
 main.deleteTargetFile = null;
 main.deleteFile = function(file) {
   main.deleteTargetFile = file;
-  util.dialog.yesno('Delete?', main._deleteFile);
+  util.dialog.confirm('Delete?', main._deleteFile);
 };
 
-main._deleteFile = function(yes) {
-  if (!yes) {
-    return;
-  }
+main._deleteFile = function() {
   var param = {
     file: main.deleteTargetFile
   };
@@ -195,10 +189,9 @@ main.saveTextCb = function(xhr, res, req) {
   main.infotip(res.status);
 };
 main.clear = function() {
-  util.dialog.yesno('Clear?', main._clear);
+  util.dialog.confirm('Clear?', main._clear);
 };
-main._clear = function(yes) {
-  if (!yes) return;
+main._clear = function() {
   var param = {
     text: ''
   };
