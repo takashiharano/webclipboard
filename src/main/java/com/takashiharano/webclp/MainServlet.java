@@ -10,6 +10,7 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import com.takashiharano.util.JsonBuilder;
 import com.takashiharano.webclp.action.Action;
 
 @WebServlet(name = "MainServlet", urlPatterns = ("/main"))
@@ -23,12 +24,33 @@ public class MainServlet extends HttpServlet {
       throws ServletException, IOException {
     ServletContext servletContext = getServletContext();
     ProcessContext context = new ProcessContext(request, response, servletContext);
+
+    String paramVersion = context.getRequestParameter("version");
+    if (paramVersion != null) {
+      sendVersionInfo(context);
+      return;
+    }
+
     try {
       String actionName = context.getRequestParameter("action");
       Action.exec(context, actionName);
     } catch (Exception e) {
-      context.sendTextResponse(e.toString());
+      context.sendJson("ERROR", e.toString());
     }
+  }
+
+  private void sendVersionInfo(ProcessContext context) throws IOException {
+    String moduleName = AppManager.getModuleName();
+    String version = null;
+    try {
+      version = AppManager.getVersionInfo(context);
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
+    JsonBuilder jb = new JsonBuilder();
+    jb.append("module", moduleName);
+    jb.append("version", version);
+    context.sendJson(jb);
   }
 
 }

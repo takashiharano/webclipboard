@@ -93,6 +93,14 @@ public class ProcessContext {
     writer.close();
   }
 
+  public void sendJson(String json) throws IOException {
+    sendJsonResponse(json);
+  }
+
+  public void sendJson(JsonBuilder jb) throws IOException {
+    sendJsonResponse(jb.toString());
+  }
+
   public void sendJson(String status, String body) throws IOException {
     JsonBuilder jb = new JsonBuilder();
     jb.append("status", status);
