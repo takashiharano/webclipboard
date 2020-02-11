@@ -5,7 +5,7 @@
  * https://github.com/takashiharano/util.js
  */
 var util = util || {};
-util.v = '202001312250';
+util.v = '202002092245';
 
 util.DFLT_FADE_SPEED = 500;
 util.LS_AVAILABLE = false;
@@ -189,48 +189,6 @@ util.getTimeStampOfDay = function(timeString, offset) {
   return ts;
 };
 
-//-----------------------------------------------------------------------------
-util.Time = function(t) {
-  if (typeof t == 'string') {
-    // HH:MI:SS.sss
-    var wk = t.split('.');
-    var sss = wk[1];
-    if (sss) {
-      sss = (sss + '000').substr(0, 3);
-    }
-    wk = wk[0].split(':');
-    var hh = wk[0] | 0;
-    var mi = wk[1] | 0;
-    var ss = wk[2] | 0;
-    t = hh * 3600000 + mi * 60000 + ss * 1000 + sss;
-  }
-  this.time = t;
-  var tm = util.ms2struct(t);
-  this.sign = tm.sign;
-  this.days = tm.d;
-  this.hrs = tm.hr;
-  this.hours = tm.hh;
-  this.minutes = tm.mi;
-  this.seconds = tm.ss;
-  this.milliseconds = tm.sss;
-};
-util.Time.prototype = {
-  toString: function(fmt) {
-    if (!fmt) fmt = '%H:%m:%S.%s';
-    var h = this.hours;
-    if (h < 10) h = '0' + h;
-    var m = ('0' + this.minutes).slice(-2);
-    var s = ('0' + this.seconds).slice(-2);
-    var ms = ('00' + this.milliseconds).slice(-3);
-    var r = fmt;
-    r = r.replace(/%H/, h);
-    r = r.replace(/%m/, m);
-    r = r.replace(/%S/, s);
-    r = r.replace(/%s/, ms);
-    return r;
-  }
-};
-
 util.ms2struct = function(ms) {
   var wk = ms;
   var sign = false;
@@ -291,6 +249,64 @@ util.ms2sec = function(ms, toString) {
     s = parseFloat(s);
   }
   return s;
+};
+
+/**
+ * baseline, comparisonValue, abs(opt)
+ * 1581217200000, 1581066000000 -> -1 (1: abs=true)
+ * 1581217200000, 1581217200000 ->  0
+ * 1581217200000, 1581318000000 ->  1
+ */
+util.diffDays = function(ms1, ms2, abs) {
+  var sign = 1;
+  var d = ms2 - ms1;
+  if (d < 0) {
+    d *= -1;
+    if (!abs) sign = -1;
+  }
+  return Math.floor(d / 86400000) * sign;
+};
+
+//-----------------------------------------------------------------------------
+util.Time = function(t) {
+  if (typeof t == 'string') {
+    // HH:MI:SS.sss
+    var wk = t.split('.');
+    var sss = wk[1];
+    if (sss) {
+      sss = (sss + '000').substr(0, 3);
+    }
+    wk = wk[0].split(':');
+    var hh = wk[0] | 0;
+    var mi = wk[1] | 0;
+    var ss = wk[2] | 0;
+    t = hh * 3600000 + mi * 60000 + ss * 1000 + sss;
+  }
+  this.time = t;
+  var tm = util.ms2struct(t);
+  this.sign = tm.sign;
+  this.days = tm.d;
+  this.hrs = tm.hr;
+  this.hours = tm.hh;
+  this.minutes = tm.mi;
+  this.seconds = tm.ss;
+  this.milliseconds = tm.sss;
+};
+util.Time.prototype = {
+  toString: function(fmt) {
+    if (!fmt) fmt = '%H:%m:%S.%s';
+    var h = this.hours;
+    if (h < 10) h = '0' + h;
+    var m = ('0' + this.minutes).slice(-2);
+    var s = ('0' + this.seconds).slice(-2);
+    var ms = ('00' + this.milliseconds).slice(-3);
+    var r = fmt;
+    r = r.replace(/%H/, h);
+    r = r.replace(/%m/, m);
+    r = r.replace(/%S/, s);
+    r = r.replace(/%s/, ms);
+    return r;
+  }
 };
 
 //------------------------------------------------
@@ -696,15 +712,38 @@ util.random = function(min, max) {
   return parseInt(Math.random() * (max - min + 1)) + min;
 };
 
-util.getRandomString = function(min, max, tbl) {
-  var DFLT_MAX_LEN = 8;
+/**
+ * randomString(len)
+ * randomString(tbl)
+ * randomString(tbl, len)
+ * randomString(tbl, min, max)
+ */
+util.randomString = function(a1, a2, a3) {
+  var DFLT_LEN = 8;
+  var min = -1;
+  var max = -1;
+  var tbl;
+  if ((typeof a1 == 'string') || (a1 instanceof Array)) {
+    tbl = a1;
+  } else if (typeof a1 == 'number') {
+    min = a1;
+  }
+
+  if (typeof a2 == 'number') {
+    if (min == -1) {
+      min = a2;
+    } else {
+      max = a2;
+    }
+  }
+  if (typeof a3 == 'number') {
+    max = a3;
+  }
+
   if (!tbl) tbl = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   if (typeof tbl == 'string') tbl = tbl.split('');
-  if (min == undefined) {
-    min = DFLT_MAX_LEN;
-    max = min;
-  }
-  if (max == undefined) max = min;
+  if (min == -1) min = DFLT_LEN;
+  if (max == -1) max = min;
   var s = '';
   var len = util.random(min, max);
   if (tbl.length > 0) {
@@ -1245,7 +1284,7 @@ util.getUrlHash = function() {
  */
 util.http = function(req) {
   var trc = util.http.trace;
-  var trcid = util.getRandomString(8, 8, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789');
+  var trcid = util.randomString('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 8);
   req.trcid = trcid;
   if (util.http.conn == 0) {
     util.http.onStart();
@@ -1410,12 +1449,21 @@ util.http.listeners = {
 
 //-----------------------------------------------------------------------------
 util.infotip = {};
+util.infotip.ST_HIDE = 0;
+util.infotip.ST_FADEIN = 1;
+util.infotip.ST_OPEN = 2;
+util.infotip.ST_SHOW = 3;
+util.infotip.ST_FADEOUT = 4;
+util.DFLT_DURATION = 1500;
+util.infotip.FADE_SPEED = 250;
 util.infotip.obj = {
+  id: 'infotip',
+  st: util.infotip.ST_HIDE,
   el: {
     body: null,
     pre: null
   },
-  msg: null
+  duration: 0
 };
 util.infotip.opt = null;
 util.infotip.timerId = 0;
@@ -1449,22 +1497,6 @@ util.infotip.registerStyle = function() {
   util.registerStyle(style);
 };
 
-util.infotip.create = function(obj, style) {
-  var div = document.createElement('div');
-  div.className = 'infotip-wrp';
-  var pre = document.createElement('pre');
-  pre.className = 'infotip';
-  if (style) {
-    for (var p in style) {
-      util.setStyle(pre, p, style[p]);
-    }
-  }
-  div.appendChild(pre);
-  obj.el.body = div;
-  obj.el.pre = pre;
-  document.body.appendChild(div);
-};
-
 /**
  * show("message");
  * show("message", 3000);
@@ -1474,15 +1506,10 @@ util.infotip.create = function(obj, style) {
  * show("message", 0, {style: {'font-size': '18px'}});
  */
 util.infotip.show = function(msg, duration, opt) {
-  var DFLT_DURATION = 1500;
   var x;
   var y;
   var style;
   var offset;
-
-  if (duration == undefined) {
-    duration = DFLT_DURATION;
-  }
 
   if (opt) {
     if (opt.pos) {
@@ -1516,8 +1543,9 @@ util.infotip.show = function(msg, duration, opt) {
   }
 
   var obj = util.infotip.obj;
-  obj.msg = msg;
-  util.infotip._show(obj, style);
+  if (duration == undefined) duration = util.DFLT_DURATION;
+  obj.duration = duration;
+  util.infotip._show(obj, msg, style);
 
   if ((x != undefined) && (y != undefined)) {
     util.infotip._move(obj, x, y, offset);
@@ -1525,22 +1553,47 @@ util.infotip.show = function(msg, duration, opt) {
     util.infotip._center(obj);
   }
   util.infotip.opt = opt;
-  util.fadeIn(obj.el.body, util.DFLT_FADE_SPEED);
+
+};
+
+util.infotip._show = function(obj, msg, style) {
+  if (!obj.el.body) {
+    var div = document.createElement('div');
+    div.className = 'infotip-wrp fadeout';
+    var pre = document.createElement('pre');
+    pre.className = 'infotip';
+    if (style) {
+      for (var p in style) {
+        util.setStyle(pre, p, style[p]);
+      }
+    }
+    div.appendChild(pre);
+    obj.el.body = div;
+    obj.el.pre = pre;
+    document.body.appendChild(div);
+  }
+  msg = (msg + '').replace(/\\n/g, '\n');
+  obj.el.pre.innerHTML = msg;
+  document.body.appendChild(obj.el.body);
+  if (obj.st != util.infotip.ST_SHOW) {
+    obj.st = util.infotip.ST_FADEIN;
+     setTimeout(util.infotip.fadeIn, 10, obj);
+  }
+};
+
+util.infotip.fadeIn = function(obj) {
+  var cb = util.infotip.onFadeInCompleted;
+  util.fadeIn(obj.el.body, util.infotip.FADE_SPEED, cb, obj);
+  var duration = obj.duration;
   if (duration > 0) {
     if (util.infotip.timerId) {
       clearTimeout(util.infotip.timerId);
     }
-    util.infotip.timerId = setTimeout(util.infotip.hide, duration);
+    util.infotip.timerId = setTimeout(util.infotip.hide, duration, obj);
   }
 };
-
-util.infotip._show = function(obj, style) {
-  if (!obj.el.body) {
-    util.infotip.create(obj, style);
-  }
-  obj.msg = (obj.msg + '').replace(/\\n/g, '\n');
-  obj.el.pre.innerHTML = obj.msg;
-  document.body.appendChild(obj.el.body);
+util.infotip.onFadeInCompleted = function(el, obj) {
+  obj.st = util.infotip.ST_SHOW;
 };
 
 /**
@@ -1580,25 +1633,24 @@ util.infotip._center = function(obj) {
 /**
  * Hide a infotip
  */
-util.infotip.hide = function() {
-  var delay = util.DFLT_FADE_SPEED;
-  util.fadeOut(util.infotip.obj.el.body, delay);
-  util.infotip.timerId = setTimeout(util.infotip.onFadeOutCompleted, delay);
+util.infotip.hide = function(obj) {
+  var delay = util.infotip.FADE_SPEED;
+  obj.st = util.infotip.ST_FADEOUT;
+  util.fadeOut(obj.el.body, delay);
+  util.infotip.timerId = setTimeout(util.infotip.onFadeOutCompleted, delay, null, obj);
 };
-util.infotip.onFadeOutCompleted = function() {
-  util.infotip._hide(util.infotip.obj);
+util.infotip.onFadeOutCompleted = function(el, obj) {
+  util.infotip._hide(obj);
 };
-
 util.infotip._hide = function(obj) {
   var div = obj.el.body;
   if ((div != null) && (div.parentNode)) {
     document.body.removeChild(div);
-    obj.msg = null;
   }
   obj.el.pre = null;
   obj.el.body = null;
-  obj.msg = null;
   util.infotip.opt = null;
+  obj.st = util.infotip.ST_HIDE;
 };
 
 util.infotip.isVisible = function() {
@@ -1621,6 +1673,7 @@ util.infotip.onMouseMove = function(x, y) {
 // Tooltip
 //-----------------------------------------------------------------------------
 util.tooltip = {};
+util.tooltip.DELAY = 500;
 util.tooltip.offset = {
   x: 5,
   y: -8
@@ -1628,44 +1681,63 @@ util.tooltip.offset = {
 util.tooltip.targetEl = null;
 util.tooltip.timerId = 0;
 util.tooltip.obj = {
+  id: 'tooltip',
+  st: util.infotip.ST_HIDE,
   el: {
     body: null,
     pre: null
-  },
-  msg: null
-};
-
-util.tooltip.show = function(el, msg, x, y) {
-  if (el == util.tooltip.targetEl) {
-    util.infotip._move(util.tooltip.obj, x, y, util.tooltip.offset);
-  } else {
-    util.tooltip.targetEl = el;
-    util.tooltip.obj.msg = msg;
-    if (!util.tooltip.obj.el.body) {
-      if (util.tooltip.timerId) {
-        clearTimeout(util.tooltip.timerId);
-      }
-      util.tooltip.timerId = setTimeout(util.tooltip._show, util.DFLT_FADE_SPEED);
-    } else {
-      util.tooltip._show();
-    }
   }
 };
 
-util.tooltip._show = function() {
+util.tooltip.show = function(el, msg, x, y) {
+  if (util.tooltip.obj.st == util.infotip.ST_FADEOUT) {
+    util.tooltip.cancel();
+  }
+  if ((el == util.tooltip.targetEl) && (util.tooltip.obj.st >= util.infotip.ST_OPEN)) {
+    util.infotip._move(util.tooltip.obj, x, y, util.tooltip.offset);
+  } else {
+    if (util.tooltip.obj.st != util.infotip.ST_SHOW) {
+      util.tooltip.obj.st = util.infotip.ST_OPEN;
+    }
+    util.tooltip.targetEl = el;
+    if (util.tooltip.obj.el.body) {
+      util.tooltip._show(msg);
+    } else {
+      if (util.tooltip.timerId) {
+        clearTimeout(util.tooltip.timerId);
+      }
+      util.tooltip.timerId = setTimeout(util.tooltip._show, util.tooltip.DELAY, msg);
+    }
+  }
+};
+util.tooltip._show = function(msg) {
+  var st = util.tooltip.obj.st;
+  if ((st == util.infotip.ST_FADEOUT) || (st == util.infotip.ST_HIDE)) {
+    util.tooltip.cancel();
+    return;
+  }
   var x = util.mouseX;
   var y = util.mouseY;
   var el = document.elementFromPoint(x, y);
   if (!el || (el != util.tooltip.targetEl)) {
     return;
   }
-  util.infotip._show(util.tooltip.obj);
+  util.infotip._show(util.tooltip.obj, msg);
   util.infotip._move(util.tooltip.obj, x, y, util.tooltip.offset);
 };
 
 util.tooltip.hide = function() {
-  util.infotip._hide(util.tooltip.obj);
+  util.infotip.hide(util.tooltip.obj);
   util.tooltip.targetEl = null;
+};
+
+util.tooltip.cancel = function() {
+  util.tooltip.targetEl = null;
+  if (util.infotip.timerId) {
+    clearTimeout(util.infotip.timerId);
+    util.infotip.timerId = 0;
+  }
+  util.infotip.onFadeOutCompleted(null, util.tooltip.obj);
 };
 
 util.tooltip.onMouseMove = function(x, y) {
@@ -2037,6 +2109,10 @@ util._registerStyle = function() {
   style += 'opacity: 0;';
   style += '}';
   style += '}';
+  style += '.dialog {';
+  style += 'background: #fff;';
+  style += 'color: #000;';
+  style += '}';
   util.registerStyle(style);
 };
 
@@ -2274,13 +2350,12 @@ util.dialog = function(content, opt) {
 util.dialog.prototype = {
   create: function(ctx, body, opt) {
     var base = document.createElement('div');
+    base.className = 'dialog';
     var style = {
       'display': 'table',
       'position': 'fixed',
       'border-radius': '3px',
       'padding': util.dialog.PADDING + 'px',
-      'background': '#fff',
-      'color': '#000',
       'z-index': '1100'
     };
     util.setStyles(base, style);
@@ -2299,7 +2374,7 @@ util.dialog.prototype = {
 
   createDialogBody: function(ctx, content, opt) {
     var body = document.createElement('div');
-    body.className = 'dialog';
+    body.className = 'dialog-body';
     var style = {
       'display': 'table-cell',
       'vertical-align': 'middle',
