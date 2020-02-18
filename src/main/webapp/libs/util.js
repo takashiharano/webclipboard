@@ -5,7 +5,7 @@
  * https://github.com/takashiharano/util.js
  */
 var util = util || {};
-util.v = '202002092245';
+util.v = '202002190008';
 
 util.DFLT_FADE_SPEED = 500;
 util.LS_AVAILABLE = false;
@@ -914,7 +914,7 @@ util.toHex = function(v, uc, pFix, d) {
   return util.formatHex(hex, uc, pFix, d);
 };
 
-util.formatDec = function(v) {
+util.formatNumber = function(v) {
   var v0 = v + '';
   var v1 = '';
   if (v0.match(/\./)) {
@@ -2922,6 +2922,193 @@ util.clearHTML = function(target, speed) {
 util._clearHTML = function(el) {
   el.innerHTML = '';
   util.removeClass(el, 'fadeout');
+};
+
+/**
+ * target: element / selector
+ * opt: {
+ *  min
+ *  max
+ *  low
+ *  high
+ *  optimum
+ *  value
+ *  width
+ *  height
+ *  background
+ *  border
+ *  borderRadius
+ *  green
+ *  yellow
+ *  red
+ * }
+ *
+ * <div id="meter1"></div>
+ * var m = new util.Meter('#meter1', opt);
+ */
+util.Meter = function(target, opt) {
+  target = util.getElement(target);
+
+  var min = 0;
+  var max = 100;
+  var low;
+  var high;
+  var optimum;
+  var value;
+  var w = '100px';
+  var h = '14px';
+  var bg = '#888';
+  var bd = '1px solid #ccc';
+  var bdRd = '0';
+  var green = 'linear-gradient(to right, #0d0, #8f8)';
+  var yellow = 'linear-gradient(to right, #dd0 , #ff8)';
+  var red = 'linear-gradient(to right, #d66 , #fcc)';
+
+  if (opt) {
+    if (opt.min != undefined) min = opt.min;
+    if (opt.max != undefined) max = opt.max;
+    if (opt.low != undefined) low = opt.low;
+    if (opt.high != undefined) high = opt.high;
+    if (opt.optimum != undefined) optimum = opt.optimum;
+    if (opt.value != undefined) value = opt.value;
+    if (opt.width != undefined) w = opt.width;
+    if (opt.height != undefined) h = opt.height;
+    if (opt.background != undefined) bg = opt.background;
+    if (opt.border != undefined) bd = opt.border;
+    if (opt.borderRadius != undefined) bdRd = opt.borderRadius;
+    if (opt.green != undefined) green = opt.green;
+    if (opt.yellow != undefined) yellow = opt.yellow;
+    if (opt.red != undefined) red = opt.red;
+  }
+
+  if (low == undefined) low = min;
+  if (high == undefined) high = max;
+  if (value == undefined) value = min;
+  if (low < min) low = min;
+  if (high > max) high = max;
+  if (optimum != undefined) {
+    if (optimum < min) optimum = min;
+    if (optimum > max) optimum = max;
+  }
+
+  var base = target;
+  base.className = 'meter';
+  var style = {
+    display: 'inline-block',
+    position: 'relative',
+    width: w,
+    height: h,
+    background: bg,
+    border: bd,
+    'border-radius': bdRd
+  };
+  util.setStyles(base, style);
+
+  var v = value / max * 100;
+  var bar = document.createElement('div');
+  bar.className = 'meter-bar';
+  style = {
+    width: v + '%',
+    height: '100%',
+    background: green
+  };
+  util.setStyles(bar, style);
+  base.appendChild(bar);
+
+  this.min = min;
+  this.max = max;
+  this.low = low;
+  this.high = high;
+  this.optimum = optimum;
+  this.value = value;
+  this.green = green;
+  this.yellow = yellow;
+  this.red = red;
+  this.el = base;
+  this.bar = bar;
+};
+
+util.Meter.prototype = {
+  getValue: function() {
+    return this.value;
+  },
+  setValue: function(v) {
+    if (v > this.max) {
+      v = this.max;
+    } else if (v < this.min) {
+      v = this.min;
+    }
+    this.value = v;
+    this.redraw();
+  },
+  increase: function(v) {
+    if (v == undefined) v = 1;
+    this.value += v;
+    if (this.value > this.max) this.value = this.max;
+    this.redraw();
+  },
+  decrease: function(v) {
+    if (v == undefined) v = 1;
+    this.value -= v;
+    if (this.value < this.min) this.value = this.min;
+    this.redraw();
+  },
+  setMin: function(v) {
+    this.min = v;
+    this.redraw();
+  },
+  setMax: function(v) {
+    this.max = v;
+    this.redraw();
+  },
+  setLow: function(v) {
+    this.low = v;
+    this.redraw();
+  },
+  setHigh: function(v) {
+    this.high = v;
+    this.redraw();
+  },
+  setOptimum: function(v) {
+    this.optimum = v;
+    this.redraw();
+  },
+  redraw: function() {
+    var value = this.value;
+    var max = this.max;
+    var optimum = this.optimum;
+    var high = this.high;
+    var low = this.low;
+    var mode = 'M';
+    if (optimum != undefined) {
+      if (optimum <= low) {
+        mode = 'L';
+      } else if (optimum >= high) {
+        mode = 'H';
+      }
+    }
+    var v = value / max * 100;
+    var bg = this.green;
+    if (mode == 'M') {
+      if ((value < low) || (high < value)) {
+        bg = this.yellow;
+      }
+    } else if (mode == 'L') {
+      if ((low <= value) && (value < high)) {
+        bg = this.yellow;
+      } else if (high <= value) {
+        bg = this.red;
+      }
+    } else if (mode == 'H') {
+      if ((low <= value) && (value < high)) {
+        bg = this.yellow;
+      } else if (value < low) {
+        bg = this.red;
+      }
+    }
+    util.setStyle(this.bar, 'width', v + '%');
+    util.setStyle(this.bar, 'background', bg);
+  }
 };
 
 //-----------------------------------------------------------------------------

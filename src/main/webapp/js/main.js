@@ -56,7 +56,7 @@ main.onFileSelect = function(e) {
     return;
   }
   var file = e.target.files[0];
-  var html = file.name + '  <span style="color:#ccc;">' + util.formatDec(file.size) + ' bytes</span>';
+  var html = file.name + '  <span style="color:#ccc;">' + util.formatNumber(file.size) + ' bytes</span>';
   util.writeHTML(main.selectedFileArea, html);
   main.uploadButton.disabled = false;
 };
@@ -110,7 +110,7 @@ main.getFileListCb = function(xhr, res, req) {
     html += '</span>';
     html += '</td>';
     html += '<td style="text-align:right;padding-left:1em;">';
-    html += '<span style="color:#ccc;">' + util.formatDec(file.size) + '</span>';
+    html += '<span style="color:#ccc;">' + util.formatNumber(file.size) + '</span>';
     html += '</td>';
     html += '<td>';
     html += '<span class="pseudo-link red" style="margin-left:0.8em;" onclick="main.deleteFile(\'' + file.name + '\')" data-tooltip="Delete">X</span>';
