@@ -5,7 +5,7 @@
  * https://github.com/takashiharano/util.js
  */
 var util = util || {};
-util.v = '202002190008';
+util.v = '202002202220';
 
 util.DFLT_FADE_SPEED = 500;
 util.LS_AVAILABLE = false;
@@ -1068,194 +1068,6 @@ util.strp = function(tbl, idx) {
 };
 
 //-----------------------------------------------------------------------------
-util.getElement = function(target, idx) {
-  var el;
-  idx |= 0;
-  if (typeof target == 'string') {
-    el = document.querySelectorAll(target).item(idx);
-  } else {
-    el = target;
-  }
-  return el;
-};
-util.el = util.getElement;
-
-util.getElVal = function(target, idx) {
-  var el = util.getElement(target, idx);
-  if (el) {
-    return el.value;
-  }
-  return null;
-};
-
-util.setElVal = function(target, idx, val) {
-  var el = util.getElement(target, idx);
-  if (el) {
-    el.value = val;
-  }
-};
-
-util.escHTML = function(s) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-};
-
-util.addClass = function(el, n) {
-  if (util.hasClass(el, n)) return;
-  if (el.className == '') {
-    el.className = n;
-  } else {
-    el.className += ' ' + n;
-  }
-};
-
-util.removeClass = function(el, n) {
-  var names = el.className.split(' ');
-  var nm = '';
-  for (var i = 0; i < names.length; i++) {
-    if (names[i] != n) {
-      if (i > 0) nm += ' ';
-      nm += names[i];
-    }
-  }
-  el.className = nm;
-};
-
-util.hasClass = function(el, n) {
-  var names = el.className.split(' ');
-  for (var i = 0; i < names.length; i++) {
-    if (names[i] == n) return true;
-  }
-  return false;
-};
-
-util.getClientWidth = function() {
-  return document.documentElement.clientWidth;
-};
-
-util.getClientHeight = function() {
-  return document.documentElement.clientHeight;
-};
-
-util.center = function(el) {
-  if (!el) return;
-  var cliW = util.getClientWidth();
-  var cliH = util.getClientHeight();
-  var rect = el.getBoundingClientRect();
-  var w = rect.width;
-  var h = rect.height;
-  var x = cliW / 2 - w / 2;
-  var y = cliH / 2 - h / 2;
-  if (x < 0) {
-    x = 0;
-  }
-  if (y < 0) {
-    y = 0;
-  }
-  util.setPos(el, x, y);
-};
-
-util.setPos = function(el, x, y) {
-  var style = {
-    left: x + 'px',
-    top: y + 'px'
-  };
-  util.setStyles(el, style);
-};
-
-util.textarea = {};
-util.textarea.addStatusInfo = function(textarea, infoarea) {
-  textarea = util.getElement(textarea);
-  if (!textarea) return;
-  infoarea = util.getElement(infoarea);
-  if (!infoarea) return;
-  textarea.infoarea = infoarea;
-  textarea.addEventListener('input', util.textarea.onInput);
-  textarea.addEventListener('change', util.textarea.onInput);
-  textarea.addEventListener('keydown', util.textarea.onInput);
-  textarea.addEventListener('keyup', util.textarea.onInput);
-  textarea.addEventListener('click', util.textarea.onInput);
-};
-util.textarea.onInput = function(e) {
-  util.updateTextAreaInfo(e.target);
-};
-util.updateTextAreaInfo = function(textarea) {
-  if (!textarea) return;
-  var txt = textarea.value;
-  var len = txt.length;
-  var lenB = util.lenB(txt);
-  var lfCnt = (txt.match(/\n/g) || []).length;
-  var lenWoLf = len - lfCnt;
-  var st = textarea.selectionStart;
-  var ed = textarea.selectionEnd;
-  var sl = ed - st;
-  var ch = txt.substr(st, 1);
-  var cd = util.getCodePoint(ch);
-  var cd16 = util.getUnicodePoints(ch, true);
-  var cp = '';
-  if (cd) cp = (cd == 10 ? 'LF' : ch) + ':' + cd16 + '(' + cd + ')';
-  var slct = (sl ? 'Selected=' + sl : '');
-  textarea.infoarea.innerText = 'LEN=' + lenWoLf + ' (w/RET=' + len + ') ' + lenB + ' bytes ' + cp + ' ' + slct;
-};
-
-//-----------------------------------------------------------------------------
-// Form
-//-----------------------------------------------------------------------------
-util.submit = function(url, method, params, enc) {
-  var form = document.createElement('form');
-  form.action = url;
-  form.method = method;
-  for (var key in params) {
-    var input = document.createElement('input');
-    var val = params[key];
-    if (enc) val = encodeURIComponent(val);
-    input.type = 'hidden';
-    input.name = key;
-    input.value = val;
-    form.appendChild(input);
-  }
-  document.body.appendChild(form);
-  form.submit();
-};
-
-//-----------------------------------------------------------------------------
-// URL / Query
-//-----------------------------------------------------------------------------
-util.getProtocol = function() {
-  return location.protocol;
-};
-util.getHost = function() {
-  return location.host.split(':')[0];
-};
-util.getPort = function() {
-  return location.port;
-};
-util.getParentPath = function() {
-  return location.href.replace(/(.*\/).*/, '$1');
-};
-util.getQuery = function(k) {
-  var s = window.location.search.substr(1);
-  if (!k) return s;
-  var q = s.split('&');
-  var a = [];
-  for (var i = 0; i < q.length; i++) {
-    var p = q[i].split('=');
-    if (p[0] == k) a.push(p[1]);
-  }
-  var v = null;
-  if (a.length == 1) {
-    v = a[0];
-  } else if (a.length > 1) {
-    v = a;
-  }
-  return v;
-};
-util.getUrlHash = function() {
-  var s = window.location.hash;
-  if (s) s = s.substr(1);
-  return s;
-};
-
-//-----------------------------------------------------------------------------
 // HTTP
 //-----------------------------------------------------------------------------
 /**
@@ -1341,8 +1153,9 @@ util.http = function(req) {
     xhr.withCredentials = true;
   }
   if (util.http.logging) {
-    util._log.v('=> [' + trcid + '] ' + req.url);
-    if (data) util._log.v('[DATA] ' + data.substr(0, util.http.MAX_LOG_LEN));
+    var m = '[' + trcid + '] => ' + req.url;
+    if (data) m += ' : ' + data.substr(0, util.http.MAX_LOG_LEN);
+    util._log.v(m);
   }
   xhr.send(data);
 };
@@ -1352,13 +1165,13 @@ util.http.onDone = function(xhr, req) {
     var m = res;
     if (m) {
       if (m.length > util.http.LOG_LIMIT) {
-        m = '(size=' + m.length + ')';
+        m = '[size=' + m.length + ']';
       } else if (m.length > util.http.MAX_LOG_LEN) {
-        m = m.substr(0, util.http.MAX_LOG_LEN) + '...';
+        m = m.substr(0, util.http.MAX_LOG_LEN) + '... (size=' + m.length + ')';
       }
     }
     m = util.escHTML(m);
-    util._log.v('<= [' + req.trcid + '] ' + m);
+    util._log.v('[' + req.trcid + '] <= ' + m);
   }
   if (util.http.onReceive(xhr, res, req)) {
     if (xhr.status == 200) {
@@ -1447,6 +1260,264 @@ util.http.listeners = {
   error: []
 };
 
+//-----------------------------------------------------------------------------
+// Element
+//-----------------------------------------------------------------------------
+var $el = function(target, idx) {
+  var el = target;
+  idx |= 0;
+  if (typeof target == 'string') {
+    el = document.querySelectorAll(target).item(idx);
+  }
+  return el;
+};
+util.getElement = $el;
+
+util.getElVal = function(target, idx) {
+  var el = $el(target, idx);
+  if (el) {
+    return el.value;
+  }
+  return null;
+};
+
+util.setElVal = function(target, idx, val) {
+  var el = $el(target, idx);
+  if (el) {
+    el.value = val;
+  }
+};
+
+util.escHTML = function(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+};
+
+util.addClass = function(el, n) {
+  if (util.hasClass(el, n)) return;
+  if (el.className == '') {
+    el.className = n;
+  } else {
+    el.className += ' ' + n;
+  }
+};
+
+util.removeClass = function(el, n) {
+  var names = el.className.split(' ');
+  var nm = '';
+  for (var i = 0; i < names.length; i++) {
+    if (names[i] != n) {
+      if (i > 0) nm += ' ';
+      nm += names[i];
+    }
+  }
+  el.className = nm;
+};
+
+util.hasClass = function(el, n) {
+  var names = el.className.split(' ');
+  for (var i = 0; i < names.length; i++) {
+    if (names[i] == n) return true;
+  }
+  return false;
+};
+
+util.getClientWidth = function() {
+  return document.documentElement.clientWidth;
+};
+
+util.getClientHeight = function() {
+  return document.documentElement.clientHeight;
+};
+
+util.center = function(el) {
+  if (!el) return;
+  var cliW = util.getClientWidth();
+  var cliH = util.getClientHeight();
+  var rect = el.getBoundingClientRect();
+  var w = rect.width;
+  var h = rect.height;
+  var x = cliW / 2 - w / 2;
+  var y = cliH / 2 - h / 2;
+  if (x < 0) {
+    x = 0;
+  }
+  if (y < 0) {
+    y = 0;
+  }
+  util.setPos(el, x, y);
+};
+
+util.setPos = function(el, x, y) {
+  var style = {
+    left: x + 'px',
+    top: y + 'px'
+  };
+  util.setStyles(el, style);
+};
+
+util.textarea = {};
+util.textarea.addStatusInfo = function(textarea, infoarea) {
+  textarea = $el(textarea);
+  if (!textarea) return;
+  infoarea = $el(infoarea);
+  if (!infoarea) return;
+  textarea.infoarea = infoarea;
+  textarea.addEventListener('input', util.textarea.onInput);
+  textarea.addEventListener('change', util.textarea.onInput);
+  textarea.addEventListener('keydown', util.textarea.onInput);
+  textarea.addEventListener('keyup', util.textarea.onInput);
+  textarea.addEventListener('click', util.textarea.onInput);
+};
+util.textarea.onInput = function(e) {
+  util.updateTextAreaInfo(e.target);
+};
+util.updateTextAreaInfo = function(textarea) {
+  if (!textarea) return;
+  var txt = textarea.value;
+  var len = txt.length;
+  var lenB = util.lenB(txt);
+  var lfCnt = (txt.match(/\n/g) || []).length;
+  var lenWoLf = len - lfCnt;
+  var st = textarea.selectionStart;
+  var ed = textarea.selectionEnd;
+  var sl = ed - st;
+  var ch = txt.substr(st, 1);
+  var cd = util.getCodePoint(ch);
+  var cd16 = util.getUnicodePoints(ch, true);
+  var cp = '';
+  if (cd) cp = (cd == 10 ? 'LF' : ch) + ':' + cd16 + '(' + cd + ')';
+  var slct = (sl ? 'Selected=' + sl : '');
+  textarea.infoarea.innerText = 'LEN=' + lenWoLf + ' (w/RET=' + len + ') ' + lenB + ' bytes ' + cp + ' ' + slct;
+};
+
+//-----------------------------------------------------------------------------
+// Write HTML
+//-----------------------------------------------------------------------------
+/**
+ * Write HTML and Fade in
+ * util.writeHTML('#id', 'text');
+ * util.writeHTML('#id', 'text', 300);
+ *
+ * Clear and Fade out
+ * util.writeHTML('#id', '');
+ * util.writeHTML('#id', '', 200);
+ */
+util.writeHTML = function(target, html, speed) {
+  var el = target;
+  if (typeof target == 'string') {
+    el = document.querySelector(target);
+  }
+  if (!el) return;
+  if (speed == 0) {
+    el.innerHTML = html;
+    return;
+  }
+  if (html == '') {
+    util.clearHTML(el, speed);
+  } else {
+    el.innerHTML = '';
+    var cbData = {html: html, speed: speed};
+    util.fadeOut(el, 0, util._writeHTML, cbData);
+  }
+};
+util._writeHTML = function(target, cbData) {
+  var DFLT_SPEED = 250;
+  var speed = cbData.speed;
+  if (speed == undefined) {
+    speed = DFLT_SPEED;
+  }
+  target.innerHTML = cbData.html;
+  setTimeout(util.__writeHTML, 10, target, speed);
+};
+util.__writeHTML = function(target, speed) {
+  util.fadeIn(target, speed);
+};
+
+/**
+ * Fade out and Clear
+ */
+util.clearHTML = function(target, speed) {
+  var DFLT_SPEED = 200;
+  if (speed == undefined) {
+    speed = DFLT_SPEED;
+  }
+  util.fadeOut(target, speed, util._clearHTML);
+};
+util._clearHTML = function(el) {
+  el.innerHTML = '';
+  util.removeClass(el, 'fadeout');
+};
+
+//-----------------------------------------------------------------------------
+// Styles
+//-----------------------------------------------------------------------------
+util.CSS = '';
+
+util.registerStyle = function(style) {
+  util.CSS += style;
+};
+
+util.setupStyle = function() {
+  util._registerStyle();
+  util.infotip.registerStyle();
+  util.registerFadeStyle();
+  util.loader.registerStyle();
+
+  var head = document.head || document.getElementsByTagName('head').item(0);
+  var style = document.createElement('style');
+  var firstStyle = document.getElementsByTagName('style').item(0);
+  if (firstStyle) {
+    head.insertBefore(style, firstStyle);
+  } else {
+    head.appendChild(style);
+  }
+  style.type = 'text/css';
+  if (style.styleSheet) {
+    style.styleSheet.cssText = util.CSS;
+  } else {
+    style.appendChild(document.createTextNode(util.CSS));
+  }
+};
+
+util.setStyle = function(el, n, v) {
+  el.style.setProperty(n, v, 'important');
+};
+util.setStyles = function(el, s) {
+  for (var k in s) {
+    util.setStyle(el, k, s[k]);
+  }
+};
+
+util._registerStyle = function() {
+  var style = '.pointable:hover {';
+  style += 'cursor: pointer !important;';
+  style += '}';
+  style += '.pseudo-link {';
+  style += 'cursor: pointer;';
+  style += '}';
+  style += '.pseudo-link:hover {';
+  style += 'text-decoration: underline;';
+  style += '}';
+  style += '.blink {';
+  style += 'animation: blinker 1.5s step-end infinite;';
+  style += '}';
+  style += '@keyframes blinker {';
+  style += '50% {';
+  style += 'opacity: 0;';
+  style += '}';
+  style += '100% {';
+  style += 'opacity: 0;';
+  style += '}';
+  style += '}';
+  style += '.dialog {';
+  style += 'background: #fff;';
+  style += 'color: #000;';
+  style += '}';
+  util.registerStyle(style);
+};
+
+//-----------------------------------------------------------------------------
+// Infotip
 //-----------------------------------------------------------------------------
 util.infotip = {};
 util.infotip.ST_HIDE = 0;
@@ -1868,252 +1939,6 @@ util.createFadeScreenEl = function() {
   };
   util.setStyles(el, style);
   return el;
-};
-
-//-----------------------------------------------------------------------------
-// Base64
-//-----------------------------------------------------------------------------
-util.Base64 = {};
-util.Base64.encode = function(arr) {
-  var len = arr.length;
-  if (len == 0) return '';
-  var tbl = {64: 61, 63: 47, 62: 43};
-  for (var i = 0; i < 62; i++) {
-    tbl[i] = (i < 26 ? i + 65 : (i < 52 ? i + 71 : i - 4));
-  }
-  var str = '';
-  for (i = 0; i < len; i += 3) {
-    str += String.fromCharCode(
-      tbl[arr[i] >>> 2],
-      tbl[(arr[i] & 3) << 4 | arr[i + 1] >>> 4],
-      tbl[(i + 1) < len ? (arr[i + 1] & 15) << 2 | arr[i + 2] >>> 6 : 64],
-      tbl[(i + 2) < len ? (arr[i + 2] & 63) : 64]
-    );
-  }
-  return str;
-};
-util.Base64.decode = function(str) {
-  var arr = [];
-  if (str.length == 0) return arr;
-  for (var i = 0; i < str.length; i++) {
-    var c = str.charCodeAt(i);
-    if (!(((c >= 0x30) && (c <= 0x39)) || ((c >= 0x41) && (c <= 0x5A)) || ((c >= 0x61) && (c <= 0x7A)) || (c == 0x2B) || (c == 0x2F) || (c == 0x3D))) {
-      util._log.e('invalid b64 char: 0x' + c.toString(16).toUpperCase() + ' at ' + i);
-      return arr;
-    }
-  }
-  var tbl = {61: 64, 47: 63, 43: 62};
-  for (i = 0; i < 62; i++) {
-    tbl[i < 26 ? i + 65 : (i < 52 ? i + 71 : i - 4)] = i;
-  }
-  var buf = [];
-  for (i = 0; i < str.length; i += 4) {
-    for (var j = 0; j < 4; j++) {
-      buf[j] = tbl[str.charCodeAt(i + j) || 0];
-    }
-    arr.push(
-      buf[0] << 2 | (buf[1] & 63) >>> 4,
-      (buf[1] & 15) << 4 | (buf[2] & 63) >>> 2,
-      (buf[2] & 3) << 6 | buf[3] & 63
-    );
-  }
-  if (buf[3] == 64) {
-    arr.pop();
-    if (buf[2] == 64) {
-      arr.pop();
-    }
-  }
-  return arr;
-};
-
-util.encodeBase64 = function(s) {
-  var r;
-  try {
-    r = btoa(s);
-  } catch (e) {
-    r = btoa(encodeURIComponent(s).replace(/%([0-9A-F]{2})/g, function(match, p1) {return String.fromCharCode('0x' + p1);}));
-  }
-  return r;
-};
-util.decodeBase64 = function(s) {
-  var r = '';
-  if (!window.atob) return r;
-  try {
-    r = decodeURIComponent(Array.prototype.map.call(atob(s), function(c) {
-      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-    }).join(''));
-  } catch (e) {
-    r = atob(s);
-  }
-  return r;
-};
-
-//-----------------------------------------------------------------------------
-// UTF-8
-//-----------------------------------------------------------------------------
-util.UTF8 = {};
-util.UTF8.toByte = function(s) {
-  var a = [];
-  if (!s) return a;
-  for (var i = 0; i < s.length; i++) {
-    var c = s.charCodeAt(i);
-    if (c <= 0x7F) {
-      a.push(c);
-    } else if (c <= 0x07FF) {
-      a.push(((c >> 6) & 0x1F) | 0xC0);
-      a.push((c & 0x3F) | 0x80);
-    } else {
-      a.push(((c >> 12) & 0x0F) | 0xE0);
-      a.push(((c >> 6) & 0x3F) | 0x80);
-      a.push((c & 0x3F) | 0x80);
-    }
-  }
-  return a;
-};
-util.UTF8.fmByte = function(a) {
-  if (!a) return null;
-  var s = '';
-  var i, c;
-  while (i = a.shift()) {
-    if (i <= 0x7F) {
-      s += String.fromCharCode(i);
-    } else if (i <= 0xDF) {
-      c = ((i & 0x1F) << 6);
-      c += a.shift() & 0x3F;
-      s += String.fromCharCode(c);
-    } else if (i <= 0xE0) {
-      c = ((a.shift() & 0x1F) << 6) | 0x800;
-      c += a.shift() & 0x3F;
-      s += String.fromCharCode(c);
-    } else {
-      c = ((i & 0x0F) << 12);
-      c += (a.shift() & 0x3F) << 6;
-      c += a.shift() & 0x3F;
-      s += String.fromCharCode(c);
-    }
-  }
-  return s;
-};
-
-//-----------------------------------------------------------------------------
-// bit operation
-//-----------------------------------------------------------------------------
-util.bit8 = {};
-util.bit8.rotateL = function(v, n) {
-  n = n % 8;
-  return ((v << n) | (v >> (8 - n))) & 255;
-};
-util.bit8.rotateR = function(v, n) {
-  n = n % 8;
-  return ((v >> n) | (v << (8 - n))) & 255;
-};
-util.bit8.invert = function(v) {
-  return (~v) & 255;
-};
-
-//-----------------------------------------------------------------------------
-// BSB64
-//-----------------------------------------------------------------------------
-util.encodeBSB64 = function(s, n) {
-  var a = util.UTF8.toByte(s);
-  return util.BSB64.encode(a, n);
-};
-util.decodeBSB64 = function(s, n) {
-  if (s.match(/\$\d+$/)) {
-    var v = s.split('$');
-    s = v[0];
-    n = v[1];
-  }
-  var a = util.BSB64.decode(s, n);
-  return util.UTF8.fmByte(a);
-};
-util.BSB64 = {};
-util.BSB64.encode = function(a, n) {
-  var fn = util.bit8.rotateL;
-  if (n % 8 == 0) fn = util.bit8.invert;
-  var b = [];
-  for (var i = 0; i < a.length; i++) {
-    b.push(fn(a[i], n));
-  }
-  return util.Base64.encode(b);
-};
-util.BSB64.decode = function(s, n) {
-  var fn = util.bit8.rotateR;
-  if (n % 8 == 0) fn = util.bit8.invert;
-  var b = util.Base64.decode(s);
-  var a = [];
-  for (var i = 0; i < b.length; i++) {
-    a.push(fn(b[i], n));
-  }
-  return a;
-};
-
-//-----------------------------------------------------------------------------
-// Styles
-//-----------------------------------------------------------------------------
-util.CSS = '';
-
-util.registerStyle = function(style) {
-  util.CSS += style;
-};
-
-util.setupStyle = function() {
-  util._registerStyle();
-  util.infotip.registerStyle();
-  util.registerFadeStyle();
-  util.loader.registerStyle();
-
-  var head = document.head || document.getElementsByTagName('head').item(0);
-  var style = document.createElement('style');
-  var firstStyle = document.getElementsByTagName('style').item(0);
-  if (firstStyle) {
-    head.insertBefore(style, firstStyle);
-  } else {
-    head.appendChild(style);
-  }
-  style.type = 'text/css';
-  if (style.styleSheet) {
-    style.styleSheet.cssText = util.CSS;
-  } else {
-    style.appendChild(document.createTextNode(util.CSS));
-  }
-};
-
-util.setStyle = function(el, n, v) {
-  el.style.setProperty(n, v, 'important');
-};
-util.setStyles = function(el, s) {
-  for (var k in s) {
-    util.setStyle(el, k, s[k]);
-  }
-};
-
-util._registerStyle = function() {
-  var style = '.pointable:hover {';
-  style += 'cursor: pointer !important;';
-  style += '}';
-  style += '.pseudo-link {';
-  style += 'cursor: pointer;';
-  style += '}';
-  style += '.pseudo-link:hover {';
-  style += 'text-decoration: underline;';
-  style += '}';
-  style += '.blink {';
-  style += 'animation: blinker 1.5s step-end infinite;';
-  style += '}';
-  style += '@keyframes blinker {';
-  style += '50% {';
-  style += 'opacity: 0;';
-  style += '}';
-  style += '100% {';
-  style += 'opacity: 0;';
-  style += '}';
-  style += '}';
-  style += '.dialog {';
-  style += 'background: #fff;';
-  style += 'color: #000;';
-  style += '}';
-  util.registerStyle(style);
 };
 
 //-----------------------------------------------------------------------------
@@ -2570,7 +2395,7 @@ util.dialog.count = function() {
   return util.dialog.instances.length;
 };
 
-//-----------------------------------------------------------------------------
+//-----------------------------------------------
 /**
  * util.dialog.info('message');
  * util.dialog.info('title', 'message');
@@ -2643,7 +2468,7 @@ util.dialog.info = function(a1, a2, a3, a4) {
   util.dialog.open(content, dialogOpt);
 };
 
-//-----------------------------------------------------------------------------
+//-----------------------------------------------------------
 /**
  * util.dialog.confirm('message', cbYes);
  * util.dialog.confirm('message', cbYes, cbNo);
@@ -2755,7 +2580,7 @@ util.dialog.sysCbN = function(ctx) {
   if (ctx.cbN) ctx.cbN(ctx.data);
 };
 
-//-----------------------------------------------------------------------------
+//-----------------------------------------------------------
 /**
  * util.dialog.text('message', cbOK);
  * util.dialog.text('message', cbOK, cbCancel);
@@ -2869,61 +2694,8 @@ util.dialog.text.sysCbCancel = function(ctx) {
 };
 
 //-----------------------------------------------------------------------------
-// Write HTML
+// Meter
 //-----------------------------------------------------------------------------
-/**
- * Write HTML and Fade in
- * util.writeHTML('#id', 'text');
- * util.writeHTML('#id', 'text', 300);
- *
- * Clear and Fade out
- * util.writeHTML('#id', '');
- * util.writeHTML('#id', '', 200);
- */
-util.writeHTML = function(target, html, speed) {
-  var el = target;
-  if (typeof target == 'string') {
-    el = document.querySelector(target);
-  }
-  if (!el) return;
-  if (speed == 0) {
-    el.innerHTML = html;
-    return;
-  }
-  if (html == '') {
-    util.clearHTML(el, speed);
-  } else {
-    el.innerHTML = '';
-    var cbData = {html: html, speed: speed};
-    util.fadeOut(el, 0, util._writeHTML, cbData);
-  }
-};
-util._writeHTML = function(target, cbData) {
-  var DFLT_SPEED = 250;
-  var speed = cbData.speed;
-  if (speed == undefined) {
-    speed = DFLT_SPEED;
-  }
-  target.innerHTML = cbData.html;
-  setTimeout(util.__writeHTML, 10, target, speed);
-};
-util.__writeHTML = function(target, speed) {
-  util.fadeIn(target, speed);
-};
-
-// Fade out and Clear
-util.clearHTML = function(target, speed) {
-  var DFLT_SPEED = 200;
-  if (speed == undefined) {
-    speed = DFLT_SPEED;
-  }
-  util.fadeOut(target, speed, util._clearHTML);
-};
-util._clearHTML = function(el) {
-  el.innerHTML = '';
-  util.removeClass(el, 'fadeout');
-};
-
 /**
  * target: element / selector
  * opt: {
@@ -2947,7 +2719,7 @@ util._clearHTML = function(el) {
  * var m = new util.Meter('#meter1', opt);
  */
 util.Meter = function(target, opt) {
-  target = util.getElement(target);
+  target = $el(target);
 
   var min = 0;
   var max = 100;
@@ -3109,6 +2881,242 @@ util.Meter.prototype = {
     util.setStyle(this.bar, 'width', v + '%');
     util.setStyle(this.bar, 'background', bg);
   }
+};
+
+//-----------------------------------------------------------------------------
+// Form
+//-----------------------------------------------------------------------------
+util.submit = function(url, method, params, enc) {
+  var form = document.createElement('form');
+  form.action = url;
+  form.method = method;
+  for (var key in params) {
+    var input = document.createElement('input');
+    var val = params[key];
+    if (enc) val = encodeURIComponent(val);
+    input.type = 'hidden';
+    input.name = key;
+    input.value = val;
+    form.appendChild(input);
+  }
+  document.body.appendChild(form);
+  form.submit();
+};
+
+//-----------------------------------------------------------------------------
+// URL / Query
+//-----------------------------------------------------------------------------
+util.getProtocol = function() {
+  return location.protocol;
+};
+util.getHost = function() {
+  return location.host.split(':')[0];
+};
+util.getPort = function() {
+  return location.port;
+};
+util.getParentPath = function() {
+  return location.href.replace(/(.*\/).*/, '$1');
+};
+util.getQuery = function(k) {
+  var s = window.location.search.substr(1);
+  if (!k) return s;
+  var q = s.split('&');
+  var a = [];
+  for (var i = 0; i < q.length; i++) {
+    var p = q[i].split('=');
+    if (p[0] == k) a.push(p[1]);
+  }
+  var v = null;
+  if (a.length == 1) {
+    v = a[0];
+  } else if (a.length > 1) {
+    v = a;
+  }
+  return v;
+};
+util.getUrlHash = function() {
+  var s = window.location.hash;
+  if (s) s = s.substr(1);
+  return s;
+};
+
+//-----------------------------------------------------------------------------
+// Base64
+//-----------------------------------------------------------------------------
+util.Base64 = {};
+util.Base64.encode = function(arr) {
+  var len = arr.length;
+  if (len == 0) return '';
+  var tbl = {64: 61, 63: 47, 62: 43};
+  for (var i = 0; i < 62; i++) {
+    tbl[i] = (i < 26 ? i + 65 : (i < 52 ? i + 71 : i - 4));
+  }
+  var str = '';
+  for (i = 0; i < len; i += 3) {
+    str += String.fromCharCode(
+      tbl[arr[i] >>> 2],
+      tbl[(arr[i] & 3) << 4 | arr[i + 1] >>> 4],
+      tbl[(i + 1) < len ? (arr[i + 1] & 15) << 2 | arr[i + 2] >>> 6 : 64],
+      tbl[(i + 2) < len ? (arr[i + 2] & 63) : 64]
+    );
+  }
+  return str;
+};
+util.Base64.decode = function(str) {
+  var arr = [];
+  if (str.length == 0) return arr;
+  for (var i = 0; i < str.length; i++) {
+    var c = str.charCodeAt(i);
+    if (!(((c >= 0x30) && (c <= 0x39)) || ((c >= 0x41) && (c <= 0x5A)) || ((c >= 0x61) && (c <= 0x7A)) || (c == 0x2B) || (c == 0x2F) || (c == 0x3D))) {
+      util._log.e('invalid b64 char: 0x' + c.toString(16).toUpperCase() + ' at ' + i);
+      return arr;
+    }
+  }
+  var tbl = {61: 64, 47: 63, 43: 62};
+  for (i = 0; i < 62; i++) {
+    tbl[i < 26 ? i + 65 : (i < 52 ? i + 71 : i - 4)] = i;
+  }
+  var buf = [];
+  for (i = 0; i < str.length; i += 4) {
+    for (var j = 0; j < 4; j++) {
+      buf[j] = tbl[str.charCodeAt(i + j) || 0];
+    }
+    arr.push(
+      buf[0] << 2 | (buf[1] & 63) >>> 4,
+      (buf[1] & 15) << 4 | (buf[2] & 63) >>> 2,
+      (buf[2] & 3) << 6 | buf[3] & 63
+    );
+  }
+  if (buf[3] == 64) {
+    arr.pop();
+    if (buf[2] == 64) {
+      arr.pop();
+    }
+  }
+  return arr;
+};
+
+util.encodeBase64 = function(s) {
+  var r;
+  try {
+    r = btoa(s);
+  } catch (e) {
+    r = btoa(encodeURIComponent(s).replace(/%([0-9A-F]{2})/g, function(match, p1) {return String.fromCharCode('0x' + p1);}));
+  }
+  return r;
+};
+util.decodeBase64 = function(s) {
+  var r = '';
+  if (!window.atob) return r;
+  try {
+    r = decodeURIComponent(Array.prototype.map.call(atob(s), function(c) {
+      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+  } catch (e) {
+    r = atob(s);
+  }
+  return r;
+};
+
+//-----------------------------------------------------------------------------
+// UTF-8
+//-----------------------------------------------------------------------------
+util.UTF8 = {};
+util.UTF8.toByte = function(s) {
+  var a = [];
+  if (!s) return a;
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charCodeAt(i);
+    if (c <= 0x7F) {
+      a.push(c);
+    } else if (c <= 0x07FF) {
+      a.push(((c >> 6) & 0x1F) | 0xC0);
+      a.push((c & 0x3F) | 0x80);
+    } else {
+      a.push(((c >> 12) & 0x0F) | 0xE0);
+      a.push(((c >> 6) & 0x3F) | 0x80);
+      a.push((c & 0x3F) | 0x80);
+    }
+  }
+  return a;
+};
+util.UTF8.fmByte = function(a) {
+  if (!a) return null;
+  var s = '';
+  var i, c;
+  while (i = a.shift()) {
+    if (i <= 0x7F) {
+      s += String.fromCharCode(i);
+    } else if (i <= 0xDF) {
+      c = ((i & 0x1F) << 6);
+      c += a.shift() & 0x3F;
+      s += String.fromCharCode(c);
+    } else if (i <= 0xE0) {
+      c = ((a.shift() & 0x1F) << 6) | 0x800;
+      c += a.shift() & 0x3F;
+      s += String.fromCharCode(c);
+    } else {
+      c = ((i & 0x0F) << 12);
+      c += (a.shift() & 0x3F) << 6;
+      c += a.shift() & 0x3F;
+      s += String.fromCharCode(c);
+    }
+  }
+  return s;
+};
+
+//-----------------------------------------------------------------------------
+// bit operation
+//-----------------------------------------------------------------------------
+util.bit8 = {};
+util.bit8.rotateL = function(v, n) {
+  n = n % 8;
+  return ((v << n) | (v >> (8 - n))) & 255;
+};
+util.bit8.rotateR = function(v, n) {
+  n = n % 8;
+  return ((v >> n) | (v << (8 - n))) & 255;
+};
+util.bit8.invert = function(v) {
+  return (~v) & 255;
+};
+
+//-----------------------------------------------------------------------------
+// BSB64
+//-----------------------------------------------------------------------------
+util.encodeBSB64 = function(s, n) {
+  var a = util.UTF8.toByte(s);
+  return util.BSB64.encode(a, n);
+};
+util.decodeBSB64 = function(s, n) {
+  if (s.match(/\$\d+$/)) {
+    var v = s.split('$');
+    s = v[0];
+    n = v[1];
+  }
+  var a = util.BSB64.decode(s, n);
+  return util.UTF8.fmByte(a);
+};
+util.BSB64 = {};
+util.BSB64.encode = function(a, n) {
+  var fn = util.bit8.rotateL;
+  if (n % 8 == 0) fn = util.bit8.invert;
+  var b = [];
+  for (var i = 0; i < a.length; i++) {
+    b.push(fn(a[i], n));
+  }
+  return util.Base64.encode(b);
+};
+util.BSB64.decode = function(s, n) {
+  var fn = util.bit8.rotateR;
+  if (n % 8 == 0) fn = util.bit8.invert;
+  var b = util.Base64.decode(s);
+  var a = [];
+  for (var i = 0; i < b.length; i++) {
+    a.push(fn(b[i], n));
+  }
+  return a;
 };
 
 //-----------------------------------------------------------------------------
@@ -3483,5 +3491,4 @@ util.init = function() {
   window.addEventListener('beforeunload', util.onB4Unload, true);
   window.addEventListener('unload', util.onUnload, true);
 };
-
 util.init();

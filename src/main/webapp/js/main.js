@@ -8,23 +8,24 @@ main.selectButton = null;
 main.saveButton = null;
 main.fileInput = null;
 main.textInfoArea = null;
+main.selectedFile = null;
 
 main.onReady = function() {
   if (window.dbg) {
     util.http.log = true;
   }
-  main.selectedFileArea = util.el('#selected-file');
-  main.fileInput = util.el('#files');
-  main.selectButton = util.el('#select-button');
-  main.fileListArea = util.el('#file-list');
-  main.uploadButton = util.el('#upload-button');
-  main.textArea = util.el('#text');
-  main.saveButton = util.el('#save-button');
-  main.textInfoArea = util.el('#text-info');
+  main.selectedFileArea = $el('#selected-file');
+  main.fileInput = $el('#files');
+  main.selectButton = $el('#select-button');
+  main.fileListArea = $el('#file-list');
+  main.uploadButton = $el('#upload-button');
+  main.textArea = $el('#text');
+  main.saveButton = $el('#save-button');
+  main.textInfoArea = $el('#text-info');
 
   main.selectButton.addEventListener('click', main.onSelectClick);
   main.fileInput.addEventListener('change', main.onFileSelect);
-  main.uploadButton.addEventListener('click', main.onUploadClick);
+  main.uploadButton.addEventListener('click', main.confirmUpload);
 
   util.textarea.addStatusInfo(main.textArea, main.textInfoArea);
   util.addKeyHandler('down', 83, main.onCtrlS, {ctrl: true});
@@ -59,15 +60,24 @@ main.onFileSelect = function(e) {
   var html = file.name + '  <span style="color:#ccc;">' + util.formatNumber(file.size) + ' bytes</span>';
   util.writeHTML(main.selectedFileArea, html);
   main.uploadButton.disabled = false;
+  main.selectedFile = file;
+  main.confirmUpload(file);
 };
 
 main.onCancelFileSelect = function() {
   var html = '<span style="color:#888;">NO FILE SELECTED</span>';
   util.writeHTML(main.selectedFileArea, html);
   main.uploadButton.disabled = true;
+  main.selectedFile = null;
 };
 
-main.onUploadClick = function() {
+main.confirmUpload = function() {
+  file = main.selectedFile;
+  var size = util.formatNumber(file.size);
+  util.dialog.confirm('Upload?', file.name + ' (' + size + ' bytes)', main.upload);
+};
+
+main.upload = function() {
   document.f1.submit();
 };
 

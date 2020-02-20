@@ -20,6 +20,7 @@ input {
 }
 button, input[type="button"], input[type="submit"] {
   min-width: 60px;
+  height: 22px;
   border: 1px solid #222;
   border-radius: 0;
   background: transparent;
@@ -95,10 +96,19 @@ textarea {
   float: left;
   margin-right: 10px;
 }
-#selected-file {
+#selected-file-wrapper {
+  display: table;
+  position: relative;
   float: left;
   min-width: 15em;
+  height: 22px;
   margin-right: 10px;
+  vertical-align: middle;
+}
+#selected-file {
+  display: table-cell;
+  position: relative;
+  vertical-align: middle;
 }
 #upload-button {
   margin-left: 1em;
@@ -129,7 +139,7 @@ textarea {
 
 <div>
   <button id="select-button" class="white-btn">FILE SELECT</button>
-  <pre id="selected-file"></pre>
+  <div id="selected-file-wrapper"><pre id="selected-file"></pre></div>
   <button id="upload-button" class="white-btn">UPLOAD</button>
   <button id="all-del-button" onclick="main.deleteAll();" style="position:absolute;right:10px;">DEL ALL</button>
 </div>
