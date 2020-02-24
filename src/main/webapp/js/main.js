@@ -133,7 +133,7 @@ main.getFileListCb = function(xhr, res, req) {
 
 
 main.deleteAll = function() {
-  util.dialog.confirm('Delete all files?', main._deleteAll);
+  util.dialog.confirm('Delete all?', main._deleteAll);
 };
 main._deleteAll = function() {
   var param = null;
