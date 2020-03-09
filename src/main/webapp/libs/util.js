@@ -5,7 +5,7 @@
  * https://github.com/takashiharano/util.js
  */
 var util = util || {};
-util.v = '202002202220';
+util.v = '202003081829';
 
 util.DFLT_FADE_SPEED = 500;
 util.LS_AVAILABLE = false;
@@ -682,7 +682,7 @@ util.decimalPadding = function(v, scale) {
   var w = r.split('.');
   var i = w[0];
   var d = (w[1] == undefined ? '' : w[1]);
-  d = util.strPadding(d, '0', scale);
+  d = util.strPadding(d, '0', scale, 'R');
   r = i + '.' + d;
   return r;
 };
@@ -789,6 +789,10 @@ util.clearObject = function(key) {
   }
 };
 
+util.str2arr = function(s) {
+  return s.match(/[\uD800-\uDBFF][\uDC00-\uDFFF]|[\s\S]/g) || [];
+};
+
 /**
  * startsWith(string, pattern, position)
  * startsWith(string, pattern, case-insensitive)
@@ -844,12 +848,17 @@ util.strPadding = function(str, ch, len, pos) {
   var d = len - t.length;
   if (d <= 0) return t;
   var pd = util.repeatCh(ch, d);
-  if (pos == 'L') {
-    t = pd + t;
-  } else {
+  if (pos == 'R') {
     t += pd;
+  } else {
+    t = pd + t;
   }
   return t;
+};
+
+util.null2empty = function(s) {
+  if ((s == null) || (s == undefined)) s = '';
+  return s;
 };
 
 util.countStr = function(s, p) {
@@ -889,13 +898,14 @@ util.toFullWidth = function(s) {
 };
 
 util.getUnicodePoints = function(str) {
-  var code = '';
-  for (var i = 0; i < str.length; i++) {
-    var p = util.getCodePoint(str.charAt(i), true);
-    if (i > 0) code += ' ';
-    code += 'U+' + util.formatHex(p, true, '', 4);
+  var cd = '';
+  var chs = util.str2arr(str);
+  for (var i = 0; i < chs.length; i++) {
+    var p = util.getCodePoint(chs[i], true);
+    if (i > 0) cd += ' ';
+    cd += 'U+' + util.formatHex(p, true, 4);
   }
-  return code;
+  return cd;
 };
 
 util.getCodePoint = function(c, hex) {
@@ -905,13 +915,33 @@ util.getCodePoint = function(c, hex) {
   } else {
     p = c.charCodeAt(0);
   }
-  if (hex) p = util.toHex(p, true, '', 0);
+  if (hex) p = util.toHex(p, true, 0, '');
   return p;
 };
 
-util.toHex = function(v, uc, pFix, d) {
+util.toBin = function(v, uc, d, pFix) {
+  var bin = parseInt(v).toString(2);
+  return util.formatBin(bin, uc, d, pFix);
+};
+util.formatBin = function(bin, d, pFix) {
+  if ((d) && (bin.length < d)) {
+    bin = (util.repeatCh('0', d) + bin).slice(d * (-1));
+  }
+  if (pFix) bin = pFix + bin;
+  return bin;
+};
+
+util.toHex = function(v, uc, d, pFix) {
   var hex = parseInt(v).toString(16);
-  return util.formatHex(hex, uc, pFix, d);
+  return util.formatHex(hex, uc, d, pFix);
+};
+util.formatHex = function(hex, uc, d, pFix) {
+  if (uc) hex = hex.toUpperCase();
+  if ((d) && (hex.length < d)) {
+    hex = (util.repeatCh('0', d) + hex).slice(d * (-1));
+  }
+  if (pFix) hex = pFix + hex;
+  return hex;
 };
 
 util.formatNumber = function(v) {
@@ -934,14 +964,6 @@ util.formatNumber = function(v) {
   }
   r += v1;
   return r;
-};
-util.formatHex = function(hex, uc, pFix, d) {
-  if (uc) hex = hex.toUpperCase();
-  if ((d) && (hex.length < d)) {
-    hex = (util.repeatCh('0', d) + hex).slice(d * (-1));
-  }
-  if (pFix) hex = '0x' + hex;
-  return hex;
 };
 
 util.array2set = function(array) {
@@ -1293,6 +1315,7 @@ util.escHTML = function(s) {
 };
 
 util.addClass = function(el, n) {
+  el = $el(el);
   if (util.hasClass(el, n)) return;
   if (el.className == '') {
     el.className = n;
@@ -1302,6 +1325,7 @@ util.addClass = function(el, n) {
 };
 
 util.removeClass = function(el, n) {
+  el = $el(el);
   var names = el.className.split(' ');
   var nm = '';
   for (var i = 0; i < names.length; i++) {
@@ -1314,11 +1338,16 @@ util.removeClass = function(el, n) {
 };
 
 util.hasClass = function(el, n) {
+  el = $el(el);
   var names = el.className.split(' ');
   for (var i = 0; i < names.length; i++) {
     if (names[i] == n) return true;
   }
   return false;
+};
+
+util.isAvtive = function(el, idx) {
+  return $el(el, idx) == document.activeElement;
 };
 
 util.getClientWidth = function() {
@@ -1355,23 +1384,24 @@ util.setPos = function(el, x, y) {
   util.setStyles(el, style);
 };
 
+//-----------------------------------------------------------------------------
 util.textarea = {};
+/**
+ * addStatusInfo('#textarea-id', '#infoarea-id')
+ */
 util.textarea.addStatusInfo = function(textarea, infoarea) {
   textarea = $el(textarea);
   if (!textarea) return;
   infoarea = $el(infoarea);
   if (!infoarea) return;
   textarea.infoarea = infoarea;
-  textarea.addEventListener('input', util.textarea.onInput);
-  textarea.addEventListener('change', util.textarea.onInput);
-  textarea.addEventListener('keydown', util.textarea.onInput);
-  textarea.addEventListener('keyup', util.textarea.onInput);
-  textarea.addEventListener('click', util.textarea.onInput);
+  util.textarea._adqdLIstener(textarea);
 };
-util.textarea.onInput = function(e) {
-  util.updateTextAreaInfo(e.target);
-};
+/**
+ * updateTextAreaInfo('#textarea-id')
+ */
 util.updateTextAreaInfo = function(textarea) {
+  textarea = $el(textarea);
   if (!textarea) return;
   var txt = textarea.value;
   var len = txt.length;
@@ -1381,13 +1411,45 @@ util.updateTextAreaInfo = function(textarea) {
   var st = textarea.selectionStart;
   var ed = textarea.selectionEnd;
   var sl = ed - st;
-  var ch = txt.substr(st, 1);
+  var ch = util.str2arr(txt)[st] || '';
   var cd = util.getCodePoint(ch);
   var cd16 = util.getUnicodePoints(ch, true);
   var cp = '';
   if (cd) cp = (cd == 10 ? 'LF' : ch) + ':' + cd16 + '(' + cd + ')';
   var slct = (sl ? 'Selected=' + sl : '');
-  textarea.infoarea.innerText = 'LEN=' + lenWoLf + ' (w/RET=' + len + ') ' + lenB + ' bytes ' + cp + ' ' + slct;
+  if (textarea.infoarea) {
+    textarea.infoarea.innerText = 'LEN=' + lenWoLf + ' (w/RET=' + len + ') ' + lenB + ' bytes ' + cp + ' ' + slct;
+  }
+  var listener = textarea.listener;
+  if (listener) {
+    var data = {
+      codePoint: cd,
+      chr: ch,
+      len: len,
+      lenB: lenB,
+      start: st,
+      end: ed,
+      selected: sl
+    };
+    listener(data);
+  }
+};
+util.textarea._adqdLIstener = function(target) {
+  target.addEventListener('input', util.textarea.onInput);
+  target.addEventListener('change', util.textarea.onInput);
+  target.addEventListener('keydown', util.textarea.onInput);
+  target.addEventListener('keyup', util.textarea.onInput);
+  target.addEventListener('click', util.textarea.onInput);
+};
+util.textarea.onInput = function(e) {
+  util.updateTextAreaInfo(e.target);
+};
+util.textarea.addListener = function(target, f) {
+  var el = $el(target);
+  if (el) {
+    el.listener = f;
+    util.textarea._adqdLIstener(el);
+  }
 };
 
 //-----------------------------------------------------------------------------
@@ -1480,6 +1542,7 @@ util.setupStyle = function() {
 };
 
 util.setStyle = function(el, n, v) {
+  el = $el(el);
   el.style.setProperty(n, v, 'important');
 };
 util.setStyles = function(el, s) {
@@ -1657,10 +1720,10 @@ util.infotip.fadeIn = function(obj) {
   util.fadeIn(obj.el.body, util.infotip.FADE_SPEED, cb, obj);
   var duration = obj.duration;
   if (duration > 0) {
-    if (util.infotip.timerId) {
-      clearTimeout(util.infotip.timerId);
+    if (util[obj.id].timerId) {
+      clearTimeout(util[obj.id].timerId);
     }
-    util.infotip.timerId = setTimeout(util.infotip.hide, duration, obj);
+    util[obj.id].timerId = setTimeout(util.infotip.hide, duration, obj);
   }
 };
 util.infotip.onFadeInCompleted = function(el, obj) {
@@ -1708,7 +1771,7 @@ util.infotip.hide = function(obj) {
   var delay = util.infotip.FADE_SPEED;
   obj.st = util.infotip.ST_FADEOUT;
   util.fadeOut(obj.el.body, delay);
-  util.infotip.timerId = setTimeout(util.infotip.onFadeOutCompleted, delay, null, obj);
+  util[obj.id].timerId = setTimeout(util.infotip.onFadeOutCompleted, delay, null, obj);
 };
 util.infotip.onFadeOutCompleted = function(el, obj) {
   util.infotip._hide(obj);
@@ -1720,7 +1783,9 @@ util.infotip._hide = function(obj) {
   }
   obj.el.pre = null;
   obj.el.body = null;
-  util.infotip.opt = null;
+  if (obj.id == 'infotip') {
+    util.infotip.opt = null;
+  }
   obj.st = util.infotip.ST_HIDE;
 };
 
@@ -1759,7 +1824,7 @@ util.tooltip.obj = {
     pre: null
   }
 };
-
+util.tooltip.disabled = false;
 util.tooltip.show = function(el, msg, x, y) {
   if (util.tooltip.obj.st == util.infotip.ST_FADEOUT) {
     util.tooltip.cancel();
@@ -1804,14 +1869,15 @@ util.tooltip.hide = function() {
 
 util.tooltip.cancel = function() {
   util.tooltip.targetEl = null;
-  if (util.infotip.timerId) {
-    clearTimeout(util.infotip.timerId);
-    util.infotip.timerId = 0;
+  if (util.tooltip.timerId) {
+    clearTimeout(util.tooltip.timerId);
+    util.tooltip.timerId = 0;
   }
   util.infotip.onFadeOutCompleted(null, util.tooltip.obj);
 };
 
 util.tooltip.onMouseMove = function(x, y) {
+  if (util.tooltip.disabled) return;
   var el = document.elementFromPoint(x, y);
   var tooltip = ((el && el.dataset) ? el.dataset.tooltip : null);
   if (tooltip) {
@@ -1819,6 +1885,10 @@ util.tooltip.onMouseMove = function(x, y) {
   } else if (util.tooltip.obj.el.body) {
     util.tooltip.hide();
   }
+};
+
+util.tooltip.setDelay = function(ms) {
+  util.tooltip.DELAY = ms;
 };
 
 //-----------------------------------------------------------------------------
@@ -1883,25 +1953,26 @@ util.__fadeOut = function(dat) {
 //-----------------------------------------------------------------------------
 util.SCREEN_FADER_ZINDEX = 99999999;
 util.fadeScreenEl = null;
-util.initScreenFader = function() {
+/**
+ * onReady()
+ *   initScreenFader('#id')
+ * onLoad()
+ *   fadeScreenIn()
+ */
+util.initScreenFader = function(a) {
   var el = util.fadeScreenEl;
-  if (!el) {
-    el = util.createFadeScreenEl();
-    util.fadeScreenEl = el;
-  }
+  if (!el) el = $el(a);
+  if (!el) el = util.createFadeScreenEl();
+  util.fadeScreenEl = el;
   document.body.appendChild(el);
+  return el;
 };
 
 util.fadeScreenIn = function(speed, cb) {
   if (speed == undefined) {
-    speed = util.DFLT_FADE_SPEED + 300;
+    speed = util.DFLT_FADE_SPEED;
   }
-  var el = util.fadeScreenEl;
-  if (!el) {
-    el = util.createFadeScreenEl();
-    util.fadeScreenEl = el;
-  }
-  document.body.appendChild(el);
+  var el = util.initScreenFader();
   util.fadeScreenIn.cb = cb;
   util.fadeOut(el, speed, util._fadeScreenIn);
 };
@@ -1917,12 +1988,7 @@ util.fadeScreenOut = function(speed, cb) {
   if (speed == undefined) {
     speed = util.DFLT_FADE_SPEED;
   }
-  var el = util.fadeScreenEl;
-  if (!el) {
-    el = util.createFadeScreenEl();
-    util.fadeScreenEl = el;
-  }
-  document.body.appendChild(el);
+  var el = util.initScreenFader();
   util.fadeIn(el, speed, cb);
 };
 
@@ -2456,6 +2522,7 @@ util.dialog.info = function(a1, a2, a3, a4) {
     ],
     style: opt.style
   };
+  msg = util.null2empty(msg);
   msg = util.convertNewLine(msg, '<br>');
   var content = document.createElement('div');
   content.style.display = 'inline-block';
@@ -2531,7 +2598,8 @@ util.dialog.confirm = function(a1, a2, a3, a4, a5) {
     cbY: util.dialog.sysCbY,
     cbN: util.dialog.sysCbN,
   };
-  msg = util.convertNewLine(msg, '<br>');
+  msg = util.null2empty(msg);
+  msg = util.convertNewLine(msg + '', '<br>');
   var content = document.createElement('div');
   content.style.display = 'inline-block';
   if (opt.style && opt.style.message) {
@@ -2691,6 +2759,13 @@ util.dialog.text.sysCbOK = function(ctx) {
 util.dialog.text.sysCbCancel = function(ctx) {
   var text = ctx.txtBox.value;
   if (ctx.cbN) ctx.cbN(text, ctx.data);
+};
+
+util.alert = function(a1, a2, a3, a4) {
+  util.dialog.info(a1, a2, a3, a4);
+};
+util.confirm = function(a1, a2, a3, a4, a5) {
+  util.dialog.confirm(a1, a2, a3, a4, a5);
 };
 
 //-----------------------------------------------------------------------------
@@ -2884,6 +2959,109 @@ util.Meter.prototype = {
 };
 
 //-----------------------------------------------------------------------------
+// LED
+//-----------------------------------------------------------------------------
+util.Led = function(target, on, opt) {
+  var el = $el(target);
+  var active = on;
+  var size = '16px';
+  var color = util.Led.DFLT_COLOR;
+  var shadow = '0 0 5px';
+
+  if (opt) {
+    if (opt.size != undefined) size = opt.size;
+    if (opt.color != undefined) size = opt.color;
+    if (opt.shadow != undefined) shadow = opt.shadow;
+  }
+
+  el.className = 'led';
+  var style = {
+    'font-size': size,
+    color: (active ? color : util.Led.INACTV_COLOR),
+    'text-shadow': shadow
+  };
+  util.setStyles(el, style);
+  el.innerHTML = '&#x25CF;';
+
+  this.el = el;
+  this.size = size;
+  this.color = color;
+  this.active = active;
+  this.lighted = active;
+  this.timerId = 0;
+  this.blinkDuration = util.Led.DFLT_BLINK_DURATION;
+};
+util.Led.DFLT_COLOR = '#0f0';
+util.Led.INACTV_COLOR = '#888';
+util.Led.DFLT_BLINK_DURATION = 700;
+util.Led.prototype = {
+  on: function() {
+    var ctx = this;
+    ctx.active = true;
+    ctx._on(ctx);
+  },
+  _on: function(ctx) {
+    ctx.lighted = true;
+    util.setStyle(ctx.el, 'color', ctx.color);
+  },
+  off: function() {
+    var ctx = this;
+    ctx.active = false;
+    ctx._off(ctx);
+  },
+  _off: function(ctx) {
+    ctx.lighted = false;
+    util.setStyle(ctx.el, 'color', util.Led.INACTV_COLOR);
+  },
+  startBlink: function(d) {
+    var ctx = this;
+    d |= 0;
+    if (d <= 0) {
+      d = util.Led.DFLT_BLINK_DURATION;
+    }
+    ctx.blinkDuration = d;
+    ctx.stopBlink();
+    ctx.blink(ctx);
+  },
+  stopBlink: function(on) {
+    var ctx = this;
+    if (ctx.timerId > 0) {
+      clearTimeout(ctx.timerId);
+      ctx.timerId = 0;
+    }
+    var active = on;
+    if (on == undefined) {
+      active = ctx.active;
+    }
+    if (active) {
+      ctx._on(ctx);
+    } else {
+      ctx._off(ctx);
+    }
+  },
+  blink: function(ctx) {
+    if (ctx.lighted) {
+      ctx._off(ctx);
+    } else {
+      ctx._on(ctx);
+    }
+    ctx.timerId = setTimeout(ctx.blink, ctx.blinkDuration, ctx);
+  },
+  setColor: function(c) {
+    this.color = c;
+    if (this.active) {
+      this.on();
+    }
+  },
+  isActive: function() {
+    return this.active;
+  },
+  getElement: function() {
+    return this.el;
+  }
+};
+
+//-----------------------------------------------------------------------------
 // Form
 //-----------------------------------------------------------------------------
 util.submit = function(url, method, params, enc) {
@@ -3023,47 +3201,32 @@ util.decodeBase64 = function(s) {
 // UTF-8
 //-----------------------------------------------------------------------------
 util.UTF8 = {};
-util.UTF8.toByte = function(s) {
+util.UTF8.toByteArray = function(s) {
   var a = [];
   if (!s) return a;
-  for (var i = 0; i < s.length; i++) {
-    var c = s.charCodeAt(i);
+  var chs = util.str2arr(s);
+  for (var i = 0; i < chs.length; i++) {
+    var ch = chs[i];
+    var c = ch.charCodeAt(0);
     if (c <= 0x7F) {
       a.push(c);
-    } else if (c <= 0x07FF) {
-      a.push(((c >> 6) & 0x1F) | 0xC0);
-      a.push((c & 0x3F) | 0x80);
     } else {
-      a.push(((c >> 12) & 0x0F) | 0xE0);
-      a.push(((c >> 6) & 0x3F) | 0x80);
-      a.push((c & 0x3F) | 0x80);
+      var e = encodeURIComponent(ch);
+      var w = e.split('%');
+      for (var j = 1; j < w.length; j++) {
+        a.push(('0x' + w[j]) | 0);
+      }
     }
   }
   return a;
 };
-util.UTF8.fmByte = function(a) {
-  if (!a) return null;
-  var s = '';
-  var i, c;
-  while (i = a.shift()) {
-    if (i <= 0x7F) {
-      s += String.fromCharCode(i);
-    } else if (i <= 0xDF) {
-      c = ((i & 0x1F) << 6);
-      c += a.shift() & 0x3F;
-      s += String.fromCharCode(c);
-    } else if (i <= 0xE0) {
-      c = ((a.shift() & 0x1F) << 6) | 0x800;
-      c += a.shift() & 0x3F;
-      s += String.fromCharCode(c);
-    } else {
-      c = ((i & 0x0F) << 12);
-      c += (a.shift() & 0x3F) << 6;
-      c += a.shift() & 0x3F;
-      s += String.fromCharCode(c);
-    }
+util.UTF8.fromByteArray = function(b) {
+  if (!b) return null;
+  var e = '';
+  for (var i = 0; i < b.length; i++) {
+    e += '%' + util.toHex(b[i], true, 2);
   }
-  return s;
+  return decodeURIComponent(e);
 };
 
 //-----------------------------------------------------------------------------
@@ -3086,7 +3249,7 @@ util.bit8.invert = function(v) {
 // BSB64
 //-----------------------------------------------------------------------------
 util.encodeBSB64 = function(s, n) {
-  var a = util.UTF8.toByte(s);
+  var a = util.UTF8.toByteArray(s);
   return util.BSB64.encode(a, n);
 };
 util.decodeBSB64 = function(s, n) {
@@ -3096,7 +3259,7 @@ util.decodeBSB64 = function(s, n) {
     n = v[1];
   }
   var a = util.BSB64.decode(s, n);
-  return util.UTF8.fmByte(a);
+  return util.UTF8.fromByteArray(a);
 };
 util.BSB64 = {};
 util.BSB64.encode = function(a, n) {
@@ -3462,17 +3625,67 @@ util.setupLogs = function() {
 };
 
 //-----------------------------------------------------------------------------
+util.onReady = function() {
+  util.setupStyle();
+};
+
 util.onResize = function() {
   util.infotip.adjust();
   util.dialog.adjust();
 };
 
-util.onReady = function() {
-  util.setupStyle();
+util.$onReady = function() {
+  var fn = window.$onReady;
+  if (fn) fn();
 };
-
-util.onB4Unload = function() {};
-util.onUnload = function() {};
+util.$onLoad = function() {
+  var fn = window.$onLoad;
+  if (fn) fn();
+};
+util.$onBeforeUnload = function() {
+  var fn = window.$onBeforeUnload;
+  if (fn) fn();
+};
+util.$onUnload = function() {
+  var fn = window.$onUnload;
+  if (fn) fn();
+};
+util.$onKeyDown = function(e) {
+  var fn = window.$onKeyDown;
+  if (fn) fn(e);
+};
+util.$onKeyPress = function(e) {
+  var fn = window.$onKeyPress;
+  if (fn) fn(e);
+};
+util.$onKeyUp = function(e) {
+  var fn = window.$onKeyUp;
+  if (fn) fn(e);
+};
+util.$onMouseDown = function(e) {
+  var fn = window.$onMouseDown;
+  if (fn) fn(e);
+};
+util.$onClick = function(e) {
+  var fn = window.$onClick;
+  if (fn) fn(e);
+};
+util.$onMouseUp = function(e) {
+  var fn = window.$onMouseUp;
+  if (fn) fn(e);
+};
+util.$onMouseMove = function(e) {
+  var fn = window.$onMouseMove;
+  if (fn) fn(e);
+};
+util.$onResize = function(e) {
+  var fn = window.$onResize;
+  if (fn) fn(e);
+};
+util.$onScroll = function(e) {
+  var fn = window.$onScroll;
+  if (fn) fn(e);
+};
 
 //-----------------------------------------------------------------------------
 util.init = function() {
@@ -3488,7 +3701,19 @@ util.init = function() {
   window.addEventListener('keypress', util.onKeyPress, true);
   window.addEventListener('keyup', util.onKeyUp, true);
   window.addEventListener('resize', util.onResize, true);
-  window.addEventListener('beforeunload', util.onB4Unload, true);
-  window.addEventListener('unload', util.onUnload, true);
+
+  window.addEventListener('DOMContentLoaded', util.$onReady, true);
+  window.addEventListener('load', util.$onLoad, true);
+  window.addEventListener('beforeunload', util.$onBeforeUnload, true);
+  window.addEventListener('unload', util.$onUnload, true);
+  window.addEventListener('keydown', util.$onKeyDown, true);
+  window.addEventListener('keypress', util.$onKeyPress, true);
+  window.addEventListener('keyup', util.$onKeyUp, true);
+  window.addEventListener('mousedown', util.$onMouseDown, true);
+  window.addEventListener('click', util.$onClick, true);
+  window.addEventListener('mouseup', util.$onMouseUp, true);
+  window.addEventListener('mousemove', util.$onMouseMove, true);
+  window.addEventListener('resize', util.$onResize, true);
+  window.addEventListener('scroll', util.$onScroll, true);
 };
 util.init();
