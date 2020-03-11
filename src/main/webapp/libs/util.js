@@ -5,7 +5,7 @@
  * https://github.com/takashiharano/util.js
  */
 var util = util || {};
-util.v = '202003081829';
+util.v = '202003091947';
 
 util.DFLT_FADE_SPEED = 500;
 util.LS_AVAILABLE = false;
@@ -79,6 +79,11 @@ util.DateTime = function(dt) {
   if ((dt == undefined) || (dt === '')) {
     dt = new Date();
   } else if (!(dt instanceof Date)) {
+    if (typeof dt == 'number') {
+      if ((dt + '').match(/\./)) {
+        dt = util.sec2ms(dt);
+      }
+    }
     dt = new Date(dt);
   }
   this.timestamp = dt.getTime();
