@@ -5,7 +5,7 @@
  * https://github.com/takashiharano/util.js
  */
 var util = util || {};
-util.v = '202003091947';
+util.v = '202003182145';
 
 util.DFLT_FADE_SPEED = 500;
 util.LS_AVAILABLE = false;
@@ -1292,9 +1292,10 @@ util.http.listeners = {
 //-----------------------------------------------------------------------------
 var $el = function(target, idx) {
   var el = target;
-  idx |= 0;
   if (typeof target == 'string') {
-    el = document.querySelectorAll(target).item(idx);
+    el = document.querySelectorAll(target);
+    if (target.charAt(0) == '#') idx = 0;
+    if (idx != undefined) el = el.item(idx);
   }
   return el;
 };
@@ -1631,7 +1632,7 @@ util.infotip.registerStyle = function() {
   style += '  line-height: 1.2 !important;';
   style += '  color: #fff !important;';
   style += '  font-size: 12px !important;';
-  style += '  font-family: Consolas !important;';
+  style += '  font-family: Consolas, Monaco, Menlo, monospace, sans-serif !important;';
   style += '}';
   util.registerStyle(style);
 };
@@ -2778,7 +2779,7 @@ util.confirm = function(a1, a2, a3, a4, a5) {
 //-----------------------------------------------------------------------------
 /**
  * target: element / selector
- * opt: {
+ * opt = {
  *  min
  *  max
  *  low
@@ -2792,7 +2793,18 @@ util.confirm = function(a1, a2, a3, a4, a5) {
  *  borderRadius
  *  green
  *  yellow
- *  red
+ *  red,
+ *  label: {
+ *    text: 'TEXT',
+ *    style: {
+ *    }
+ *  },
+ *  scales: [
+ *   {
+ *     value: 80,
+ *     style: '1px solid #00f'
+ *   }
+ *  ]
  * }
  *
  * <div id="meter1"></div>
@@ -2800,6 +2812,7 @@ util.confirm = function(a1, a2, a3, a4, a5) {
  */
 util.Meter = function(target, opt) {
   target = $el(target);
+  target.innerHTML = '';
 
   var min = 0;
   var max = 100;
@@ -2867,58 +2880,141 @@ util.Meter = function(target, opt) {
   util.setStyles(bar, style);
   base.appendChild(bar);
 
-  this.min = min;
-  this.max = max;
-  this.low = low;
-  this.high = high;
-  this.optimum = optimum;
+  var scales;
+  if (opt) scales = opt.scales;
+  if (scales) {
+    for (var i = 0; i < scales.length; i++) {
+      var scale = scales[i];
+      var e = document.createElement('div');
+      var sw = scale.value;
+      if (!(sw + '').match(/%/)) {
+        sw = (sw / max * 100) + '%';
+      }
+      var ss = scale.style;
+      if (!ss) ss = '1px solid #aaa';
+      var s = {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: sw,
+        height: '100%',
+        border: 'none',
+        'border-right': ss
+      };
+      util.setStyles(e, s);
+      base.appendChild(e);
+    }
+  }
+
+  var label = null;
+  if (opt) label = opt.label;
+  if (label) {
+    var lblEl = document.createElement('div');
+    s = {
+      position: 'absolute',
+      display: 'inline-block',
+      height: '1em',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      margin: 'auto 2px',
+      color: '#fff',
+      'font-size': '12px',
+      'font-family': 'Consolas, Monaco, Menlo, monospace, sans-serif',
+      'text-align': 'center',
+      'vertical-align': 'middle'
+    };
+    util.setStyles(lblEl, s);
+    if (label.style) {
+      util.setStyles(lblEl, label.style);
+    }
+    lblEl.innerHTML = label.text;
+    base.appendChild(lblEl);
+  }
+
+  this.opt = {
+    min: min,
+    max: max,
+    low: low,
+    high: high,
+    optimum: optimum,
+    width: w,
+    height: h,
+    background: bg,
+    border: bd,
+    borderRadius: bdRd,
+    green: green,
+    yellow: yellow,
+    red: red,
+    label: label,
+    scales: scales
+  };
   this.value = value;
-  this.green = green;
-  this.yellow = yellow;
-  this.red = red;
   this.el = base;
   this.bar = bar;
+  this.lblEl = lblEl;
+  this.redraw();
 };
 
 util.Meter.prototype = {
   getValue: function() {
     return this.value;
   },
-  setValue: function(v) {
-    if (v > this.max) {
-      v = this.max;
-    } else if (v < this.min) {
-      v = this.min;
+  setValue: function(v, txt) {
+    if (v != null) {
+      this._setValue(v);
+    }
+    if (txt != undefined) {
+      this.setText(txt);
+    }
+    this.redraw();
+  },
+  _setValue: function(v) {
+    var opt = this.opt;
+    if (v > opt.max) {
+      v = opt.max;
+    } else if (v < opt.min) {
+      v = opt.min;
     }
     this.value = v;
+  },
+  setText: function(s) {
+    this.lblEl.innerHTML = s;
+    this.redraw();
+  },
+  setTextStyle: function(s) {
+    util.setStyles(this.lblEl, s);
     this.redraw();
   },
   increase: function(v) {
+    var opt = this.opt;
     if (v == undefined) v = 1;
     this.value += v;
-    if (this.value > this.max) this.value = this.max;
+    if (this.value > opt.max) this.value = opt.max;
     this.redraw();
   },
   decrease: function(v) {
+    var opt = this.opt;
     if (v == undefined) v = 1;
     this.value -= v;
-    if (this.value < this.min) this.value = this.min;
+    if (this.value < opt.min) this.value = opt.min;
     this.redraw();
   },
   setMin: function(v) {
-    this.min = v;
+    this.opt.min = v;
     this.redraw();
   },
   setMax: function(v) {
-    this.max = v;
+    this.opt.max = v;
     this.redraw();
   },
   setLow: function(v) {
-    this.low = v;
+    this.opt.low = v;
     this.redraw();
   },
   setHigh: function(v) {
-    this.high = v;
+    this.opt.high = v;
     this.redraw();
   },
   setOptimum: function(v) {
@@ -2926,11 +3022,13 @@ util.Meter.prototype = {
     this.redraw();
   },
   redraw: function() {
-    var value = this.value;
-    var max = this.max;
-    var optimum = this.optimum;
-    var high = this.high;
-    var low = this.low;
+    var ctx = this;
+    var opt = ctx.opt;
+    var value = ctx.value;
+    var max = opt.max;
+    var optimum = opt.optimum;
+    var high = opt.high;
+    var low = opt.low;
     var mode = 'M';
     if (optimum != undefined) {
       if (optimum <= low) {
@@ -2940,27 +3038,44 @@ util.Meter.prototype = {
       }
     }
     var v = value / max * 100;
-    var bg = this.green;
+    var bg = opt.green;
     if (mode == 'M') {
       if ((value < low) || (high < value)) {
-        bg = this.yellow;
+        bg = opt.yellow;
       }
     } else if (mode == 'L') {
       if ((low <= value) && (value < high)) {
-        bg = this.yellow;
+        bg = opt.yellow;
       } else if (high <= value) {
-        bg = this.red;
+        bg = opt.red;
       }
     } else if (mode == 'H') {
       if ((low <= value) && (value < high)) {
-        bg = this.yellow;
+        bg = opt.yellow;
       } else if (value < low) {
-        bg = this.red;
+        bg = opt.red;
       }
     }
-    util.setStyle(this.bar, 'width', v + '%');
-    util.setStyle(this.bar, 'background', bg);
+    util.setStyle(ctx.bar, 'width', v + '%');
+    util.setStyle(ctx.bar, 'background', bg);
   }
+};
+
+/**
+ * val: '70%'
+ * opt: {
+ *   low: 80,
+ *   high: 90,
+ *   optimum: 50
+ * };
+ */
+util.Meter.buildHTML = function(val, opt) {
+  if (!opt) opt = {};
+  if ((val + '').match(/%/)) val = val.replace(/%/, '');
+  opt.value = val;
+  var d = document.createElement('div');
+  var m = new util.Meter(d, opt);
+  return m.el.outerHTML;
 };
 
 //-----------------------------------------------------------------------------
