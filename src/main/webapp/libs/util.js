@@ -5,7 +5,7 @@
  * https://github.com/takashiharano/util.js
  */
 var util = util || {};
-util.v = '202003182145';
+util.v = '202004232137';
 
 util.DFLT_FADE_SPEED = 500;
 util.LS_AVAILABLE = false;
@@ -421,28 +421,21 @@ util.ClockTime.prototype = {
   }
 };
 
-// Addition
+// Add time
 // '12:00' + '01:30' -> '13:30'
 // '12:00' + '13:00' -> '01:00 (+1 Day)' / '25:00'
 // fmt:
 // '10:00:00.000 (+1 Day)'
 //  %H:%m:%S.%s (%d)
-util.addTimeStr = function(t1, t2, fmt) {
+util.addTime = function(t1, t2, fmt) {
   if (!fmt) fmt = '%H:%m';
-  var t = util.addTime(t1, t2);
+  var s1 = util.time2sec(t1);
+  var s2 = util.time2sec(t2);
+  var t = util._addTime(s1, s2);
   return t.toString(fmt);
 };
 
-// Add time: Returns ClockTime object
-// '12:00' + '01:30' -> '13:30'
-// '12:00' + '13:00' -> '01:00 (+1 Day)' / '25:00'
-// util.addTime('10:00:00.000', '20:00:00.000').toString('%H:%m');
-util.addTime = function(t1, t2) {
-  var s1 = util.time2sec(t1);
-  var s2 = util.time2sec(t2);
-  return util._addTime(s1, s2);
-};
-
+// Returns ClockTime object
 util._addTime = function(t1, t2) {
   var totalSecs = t1 + t2;
   var wkSecs = totalSecs;
@@ -454,28 +447,22 @@ util._addTime = function(t1, t2) {
   return util._calcTime(totalSecs, wkSecs, days);
 };
 
-// Subtraction
+// Sub time
 // '12:00' - '01:30' -> '10:30'
 // '12:00' - '13:00' -> '23:00 (-1 Day)' / '-01:00'
 // fmt:
 // '10:00:00.000 (-1 Day)'
 //  %H:%m:%S.%s (%d)
-util.subTimeStr = function(t1, t2, fmt) {
+util.subTime = function(t1, t2, fmt) {
   if (!fmt) fmt = '%H:%m';
-  var t = util.subTime(t1, t2);
+
+  var s1 = util.time2sec(t1);
+  var s2 = util.time2sec(t2);
+  var t = util._subTime(s1, s2);
   return t.toString(fmt);
 };
 
-// Sub time: Returns ClockTime object
-// '12:00' - '01:30' -> '10:30'
-// '12:00' - '13:00' -> '23:00 (-1 Day)' / '-01:00'
-// util.subTime('10:00:00.000', '20:00:00.000').toString('%H:%m');
-util.subTime = function(t1, t2) {
-  var s1 = util.time2sec(t1);
-  var s2 = util.time2sec(t2);
-  return util._subTime(s1, s2);
-};
-
+// Returns ClockTime object
 util._subTime = function(t1, t2) {
   var totalSecs = t1 - t2;
   var wkSecs = totalSecs;
@@ -892,14 +879,20 @@ util.convertNewLine = function(s, nl) {
 
 util.toHalfWidth = function(s) {
   var h = s.replace(/　/g, ' ').replace(/”/g, '"').replace(/’/g, '\'').replace(/‘/g, '`').replace(/￥/g, '\\');
-  h = h.replace(/[！-～]/g, function(wk) {return String.fromCharCode(wk.charCodeAt(0) - 65248);});
+  h = h.replace(/[！-～]/g, util.shift2half);
   return h;
+};
+util.shift2half = function(w) {
+  return String.fromCharCode(w.charCodeAt(0) - 65248);
 };
 
 util.toFullWidth = function(s) {
   var f = s.replace(/ /g, '　').replace(/"/g, '”').replace(/'/g, '’').replace(/`/g, '‘').replace(/\\/g, '￥');
-  f = f.replace(/[!-~]/g, function(wk) {return String.fromCharCode(wk.charCodeAt(0) + 65248);});
+  f = f.replace(/[!-~]/g, util.shift2full);
   return f;
+};
+util.shift2full = function(w) {
+  return String.fromCharCode(w.charCodeAt(0) + 65248);
 };
 
 util.getUnicodePoints = function(str) {
@@ -1008,6 +1001,8 @@ util.copy2clpbd = function(s) {
   return r;
 };
 
+util.A2Z = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
 /**
  *   1  -> 'A'
  *   2  -> 'B'
@@ -1023,29 +1018,23 @@ util.xlsCol = function(c) {
   return f(c);
 };
 util.xlsColA2N = function(c) {
-  var t = util.A2Z();
+  var t = util.A2Z;
   return util.pIndex(t, c.trim().toUpperCase());
 };
 util.xlsColN2A = function(n) {
-  var t = util.A2Z();
+  var t = util.A2Z;
   var a = util.strp(t, n);
   if (n <= 0) a = '';
   return a;
 };
-util.A2Z = function() {
-  var t = [];
-  for (var i = 65; i <= 90; i++) {
-    t.push(String.fromCharCode(i));
-  }
-  return t;
-};
 
 /**
- * pIndex(['A', 'B', 'C'], 'A')  -> 1
- * pIndex(['A', 'B', 'C'], 'B')  -> 2
- * pIndex(['A', 'B', 'C'], 'AA') -> 4
+ * pIndex('ABC', 'A')  -> 1
+ * pIndex('ABC', 'B')  -> 2
+ * pIndex('ABC', 'AA') -> 4
  */
 util.pIndex = function(tbl, ptn) {
+  if (typeof tbl == 'string') tbl = tbl.split('');
   var len = ptn.length;
   var rdx = tbl.length;
   var idx = 0;
@@ -1062,11 +1051,12 @@ util.pIndex = function(tbl, ptn) {
 };
 
 /**
- * strp(['A', 'B', 'C'], 1)  -> 'A'
- * strp(['A', 'B', 'C'], 2)  -> 'B'
- * strp(['A', 'B', 'C'], 4) -> 'AA'
+ * strp('ABC', 1)  -> 'A'
+ * strp('ABC', 2)  -> 'B'
+ * strp('ABC', 4) -> 'AA'
  */
 util.strp = function(tbl, idx) {
+  if (typeof tbl == 'string') tbl = tbl.split('');
   var len = tbl.length;
   var a = [-1];
   for (var i = 0; i < idx; i++) {
@@ -1291,6 +1281,80 @@ util.http.listeners = {
 // Element
 //-----------------------------------------------------------------------------
 var $el = function(target, idx) {
+  var el = util.getElement(target, idx);
+  if (el) {
+    for (var k in $el.fn) {
+      if (!el[k]) el[k] = $el.fn[k];
+    }
+  }
+  return el;
+};
+$el.fn = {
+  html: function(html, speed) {
+    if (html == undefined) return this.innerHTML;
+    if (speed == undefined) speed = 0;
+    util.writeHTML(this, html, speed);
+  },
+  text: function(text, speed) {
+    if (text == undefined) return this.innerText;
+    var html = util.escHTML(text);
+    if (speed == undefined) speed = 0;
+    util.writeHTML(this, html, speed);
+  },
+  setStyle: function(n, v) {
+    util.setStyle(this, n, v);
+  },
+  setStyles: function(n, v) {
+    util.setStyles(this, n, v);
+  },
+  addClass: function(n) {
+    util.addClass(this, n);
+  },
+  removeClass: function(n) {
+    util.removeClass(this, n);
+  },
+  hasClass: function(n) {
+    return util.hasClass(this, n);
+  },
+  isActive: function() {
+    return util.isActiveElement(this);
+  },
+  center: function() {
+    util.center(this);
+  },
+  position: function(x, y) {
+    util.setPosition(this, x, y);
+  },
+  blink: function() {
+    util.addClass(this, 'blink');
+  },
+  stopBlink: function() {
+    util.removeClass(this, 'blink');
+  },
+  hide: function() {
+    var el = this;
+    el.displayBak = el.style.display;
+    el.style.display = 'none';
+  },
+  show: function() {
+    var el = this;
+    if (el.style.display != 'none') return;
+    var v = el.displayBak;
+    if (v == undefined) v = '';
+    el.style.display = v;
+  },
+  fadeIn: function(speed, cb, arg) {
+    util.fadeIn(this, speed, cb, arg);
+  },
+  fadeOut: function(speed, cb, arg) {
+    util.fadeOut(this, speed, cb, arg);
+  },
+  getRect: function() {
+    return this.getBoundingClientRect();
+  }
+};
+
+util.getElement = function(target, idx) {
   var el = target;
   if (typeof target == 'string') {
     el = document.querySelectorAll(target);
@@ -1298,26 +1362,6 @@ var $el = function(target, idx) {
     if (idx != undefined) el = el.item(idx);
   }
   return el;
-};
-util.getElement = $el;
-
-util.getElVal = function(target, idx) {
-  var el = $el(target, idx);
-  if (el) {
-    return el.value;
-  }
-  return null;
-};
-
-util.setElVal = function(target, idx, val) {
-  var el = $el(target, idx);
-  if (el) {
-    el.value = val;
-  }
-};
-
-util.escHTML = function(s) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 };
 
 util.addClass = function(el, n) {
@@ -1352,16 +1396,30 @@ util.hasClass = function(el, n) {
   return false;
 };
 
-util.isAvtive = function(el, idx) {
+util.isActiveElement = function(el, idx) {
   return $el(el, idx) == document.activeElement;
 };
 
-util.getClientWidth = function() {
-  return document.documentElement.clientWidth;
-};
-
-util.getClientHeight = function() {
-  return document.documentElement.clientHeight;
+util.hasParent = function(el, parent) {
+  el = $el(el);
+  parent = $el(parent);
+  if (!el || !parent) return false;
+  do {
+    if (parent.toString() == '[object NodeList]') {
+      for (var i = 0; i < parent.length; i++) {
+        var p = parent[i];
+        if (el == p) {
+          return true;
+        }
+      }
+    } else {
+      if (el == parent) {
+        return true;
+      }
+    }
+    el = el.parentNode;
+  } while (el != null);
+  return false;
 };
 
 util.center = function(el) {
@@ -1379,15 +1437,31 @@ util.center = function(el) {
   if (y < 0) {
     y = 0;
   }
-  util.setPos(el, x, y);
+  util.setPosition(el, x, y);
 };
 
-util.setPos = function(el, x, y) {
+util.setPosition = function(el, x, y) {
   var style = {
     left: x + 'px',
     top: y + 'px'
   };
   util.setStyles(el, style);
+};
+
+util.getClientWidth = function() {
+  return document.documentElement.clientWidth;
+};
+
+util.getClientHeight = function() {
+  return document.documentElement.clientHeight;
+};
+
+util.getZoomRatio = function() {
+  return Math.round(window.devicePixelRatio * 100);
+};
+
+util.escHTML = function(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 };
 
 //-----------------------------------------------------------------------------
@@ -1491,7 +1565,7 @@ util.writeHTML = function(target, html, speed) {
 util._writeHTML = function(target, cbData) {
   var DFLT_SPEED = 250;
   var speed = cbData.speed;
-  if (speed == undefined) {
+  if ((speed == undefined) || (speed < 0)) {
     speed = DFLT_SPEED;
   }
   target.innerHTML = cbData.html;
@@ -1506,7 +1580,7 @@ util.__writeHTML = function(target, speed) {
  */
 util.clearHTML = function(target, speed) {
   var DFLT_SPEED = 200;
-  if (speed == undefined) {
+  if ((speed == undefined) || (speed < 0)) {
     speed = DFLT_SPEED;
   }
   util.fadeOut(target, speed, util._clearHTML);
@@ -1911,9 +1985,14 @@ util.registerFadeStyle = function() {
 };
 
 util.fadeIn = function(el, speed, cb, arg) {
+  el = $el(el);
   if (!el) return;
   if ((speed == undefined) || (speed < 0)) {
     speed = util.DFLT_FADE_SPEED;
+  }
+  if (el.fadeTimerId > 0) {
+    clearTimeout(el.fadeTimerId);
+    el.fadeTimerId = 0;
   }
   util.addClass(el, 'fadeout');
   setTimeout(util._fadeIn, 0, el, speed, cb, arg);
@@ -1923,19 +2002,25 @@ util._fadeIn = function(el, speed, cb, arg) {
   util.setStyle(el, 'transition', 'opacity ' + t + 's ease');
   util.removeClass(el, 'fadeout');
   util.addClass(el, 'fadein');
-  if (cb) {
-    var dat = {cb: cb, el: el, arg: arg};
-    setTimeout(util.__fadeIn, speed, dat);
-  }
+  var dat = {cb: cb, el: el, arg: arg};
+  el.fadeTimerId = setTimeout(util.__fadeIn, speed, dat);
 };
 util.__fadeIn = function(dat) {
-  dat.cb(dat.el, dat.arg);
+  dat.el.fadeTimerId = 0;
+  if (dat.cb) {
+    dat.cb(dat.el, dat.arg);
+  }
 };
 
 util.fadeOut = function(el, speed, cb, arg) {
+  el = $el(el);
   if (!el) return;
   if ((speed == undefined) || (speed < 0)) {
     speed = util.DFLT_FADE_SPEED;
+  }
+  if (el.fadeTimerId > 0) {
+    clearTimeout(el.fadeTimerId);
+    el.fadeTimerId = 0;
   }
   util.removeClass(el, 'fadein');
   setTimeout(util._fadeOut, 0, el, speed, cb, arg);
@@ -1945,13 +2030,14 @@ util._fadeOut = function(el, speed, cb, arg) {
   util.setStyle(el, 'transition', 'opacity ' + t + 's ease');
   util.removeClass(el, 'fadein');
   util.addClass(el, 'fadeout');
-  if (cb) {
-    var dat = {cb: cb, el: el, arg: arg};
-    setTimeout(util.__fadeOut, speed, dat);
-  }
+  var dat = {cb: cb, el: el, arg: arg};
+  el.fadeTimerId = setTimeout(util.__fadeOut, speed, dat);
 };
 util.__fadeOut = function(dat) {
-  dat.cb(dat.el, dat.arg);
+  dat.el.fadeTimerId = 0;
+  if (dat.cb) {
+    dat.cb(dat.el, dat.arg);
+  }
 };
 
 //-----------------------------------------------------------------------------
@@ -3081,25 +3167,38 @@ util.Meter.buildHTML = function(val, opt) {
 //-----------------------------------------------------------------------------
 // LED
 //-----------------------------------------------------------------------------
-util.Led = function(target, on, opt) {
+/**
+ * opt = {
+ *   size: '16px',
+ *   color: '#0f0',
+ *   shadow: '0 0 5px',
+ *   className: 'xxx',
+ *   active: true
+ * };
+ */
+util.Led = function(target, opt) {
   var el = $el(target);
-  var active = on;
   var size = '16px';
   var color = util.Led.DFLT_COLOR;
   var shadow = '0 0 5px';
+  var className = '';
+  var active = false;
 
   if (opt) {
     if (opt.size != undefined) size = opt.size;
-    if (opt.color != undefined) size = opt.color;
+    if (opt.color != undefined) color = opt.color;
     if (opt.shadow != undefined) shadow = opt.shadow;
+    if (opt.className != undefined) className = opt.className;
+    if (opt.active) active = true;
   }
 
-  el.className = 'led';
+  util.addClass(el, 'led');
+  if (className) util.addClass(el, className);
   var style = {
     'font-size': size,
-    color: (active ? color : util.Led.INACTV_COLOR),
-    'text-shadow': shadow
+    color: (active ? color : util.Led.INACTV_COLOR)
   };
+  if (shadow) style['text-shadow'] = shadow;
   util.setStyles(el, style);
   el.innerHTML = '&#x25CF;';
 
@@ -3120,14 +3219,22 @@ util.Led.prototype = {
     ctx.active = true;
     ctx._on(ctx);
   },
-  _on: function(ctx) {
-    ctx.lighted = true;
-    util.setStyle(ctx.el, 'color', ctx.color);
-  },
   off: function() {
     var ctx = this;
     ctx.active = false;
     ctx._off(ctx);
+  },
+  toggle: function() {
+    var ctx = this;
+    if (ctx.active) {
+      ctx.off(ctx);
+    } else {
+      ctx.on(ctx);
+    }
+  },
+  _on: function(ctx) {
+    ctx.lighted = true;
+    util.setStyle(ctx.el, 'color', ctx.color);
   },
   _off: function(ctx) {
     ctx.lighted = false;
@@ -3403,6 +3510,62 @@ util.BSB64.decode = function(s, n) {
 };
 
 //-----------------------------------------------------------------------------
+// Ring Buffer
+//-----------------------------------------------------------------------------
+util.RingBuffer = function(len) {
+  this.buffer = new Array(len);
+  this.len = len;
+  this.cnt = 0;
+};
+util.RingBuffer.prototype = {
+  add: function(data) {
+    var idx = this.cnt % this.len;
+    this.buffer[idx] = data;
+    this.cnt++;
+  },
+  set: function(idx, data) {
+    this.buffer[idx] = data;
+  },
+  get: function(idx) {
+    if (this.len < this.cnt) {
+      idx += this.cnt;
+    }
+    idx %= this.len;
+    return this.buffer[idx];
+  },
+  getAll: function() {
+    var buf = [];
+    var len = this.len;
+    var pos = 0;
+    if (this.cnt > len) {
+      pos = (this.cnt % len);
+    }
+    for (var i = 0; i < len; i++) {
+      if (pos >= len) {
+        pos = 0;
+      }
+      if (this.buffer[pos] == undefined) {
+        break;
+      } else {
+        buf[i] = this.buffer[pos];
+        pos++;
+      }
+    }
+    return buf;
+  },
+  clear: function() {
+    this.buffer = new Array(this.len);
+    this.cnt = 0;
+  },
+  count: function() {
+    return this.cnt;
+  },
+  size: function() {
+    return this.len;
+  }
+};
+
+//-----------------------------------------------------------------------------
 // Events
 //-----------------------------------------------------------------------------
 // NAMESPACE.cb = function(ev) {
@@ -3640,7 +3803,6 @@ util.keyHandlers = {
   press: [],
   up: []
 };
-
 
 // combination = {
 //   ctrl: true
