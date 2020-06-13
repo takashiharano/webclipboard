@@ -5,7 +5,7 @@
  * https://github.com/takashiharano/util.js
  */
 var util = util || {};
-util.v = '202004232137';
+util.v = '202005312006';
 
 util.DFLT_FADE_SPEED = 500;
 util.LS_AVAILABLE = false;
@@ -75,7 +75,13 @@ util.FRIDAY = 5;
 util.SATURDAY = 6;
 util.WDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
-util.DateTime = function(dt) {
+/**
+ * dt
+ *  Date / seconds / milli seconds / date-string
+ * offset
+ *  minutes (-0800=480 / +0000=0 / +0900=-540)
+ */
+util.DateTime = function(dt, offset) {
   if ((dt == undefined) || (dt === '')) {
     dt = new Date();
   } else if (!(dt instanceof Date)) {
@@ -87,7 +93,14 @@ util.DateTime = function(dt) {
     dt = new Date(dt);
   }
   this.timestamp = dt.getTime();
-  this.offset = dt.getTimezoneOffset();
+  var os = dt.getTimezoneOffset();
+  if (offset == undefined) {
+    this.offset = os;
+  } else {
+    this.offset = offset;
+    var ts = this.timestamp + (os - offset) * 60000;
+    dt = new Date(ts);
+  }
   var year = dt.getFullYear();
   var month = dt.getMonth() + 1;
   var day = dt.getDate();
@@ -118,8 +131,12 @@ util.DateTime.prototype = {
   setWdays: function(wdays) {
     this.WDAYS = wdays;
   },
+  // +0900 / e=true: +09:00
+  getTZ: function(e) {
+    return util.formatTZ(this.offset, e);
+  },
   toString: function(fmt) {
-    if (!fmt) fmt = '%Y-%M-%D %H:%m:%S.%s';
+    if (!fmt) fmt = '%Y-%M-%D %H:%m:%S.%s %Z';
     var s = fmt;
     s = s.replace(/%Y/, this.yyyy);
     s = s.replace(/%M/, this.mm);
@@ -129,6 +146,8 @@ util.DateTime.prototype = {
     s = s.replace(/%m/, this.mi);
     s = s.replace(/%S/, this.ss);
     s = s.replace(/%s/, this.sss);
+    s = s.replace(/%z/, this.getTZ());
+    s = s.replace(/%Z/, this.getTZ(true));
     return s;
   }
 };
@@ -227,7 +246,7 @@ util.ms2struct = function(ms) {
 };
 
 /**
- * 123456.789
+ *  123456.789
  * '123456.789'
  * -> 123456789
  */
@@ -236,10 +255,10 @@ util.sec2ms = function(sec) {
 };
 
 /**
- * 1200
+ *  1200
  * '1200'
  * -> 1.2
- * -> '1.200' (toString)
+ * -> '1.200' (toString=true)
  */
 util.ms2sec = function(ms, toString) {
   ms += '';
@@ -254,6 +273,45 @@ util.ms2sec = function(ms, toString) {
     s = parseFloat(s);
   }
   return s;
+};
+
+/**
+ * Returns time zone offset string from minutes
+ *  480       -> -0800
+ * -540       -> +0900
+ * -540, true -> +09:00
+ */
+util.formatTZ = function(v, e) {
+  v |= 0;
+  var s = '-';
+  if (v <= 0) {
+    v *= (-1);
+    s = '+';
+  }
+  var h = (v / 60) | 0;
+  var m = v - h * 60;
+  var str = s + ('0' + h).slice(-2) + ('0' + m).slice(-2);
+  if (e) str = str.substr(0, 3) + ':' + str.substr(3, 2);
+  return str;
+};
+
+/**
+ * Returns local time zone offset string
+ * +0900
+ * ext=true: +09:00
+ */
+util.getTZ = function(ext) {
+  return util.formatTZ((new Date()).getTimezoneOffset(), ext);
+};
+
+/**
+ * Returns TZ database name
+ * i.e., America/Los_Angeles
+ */
+util.getTzName = function() {
+  var n = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (!n) n = '';
+  return n;
 };
 
 /**
@@ -942,6 +1000,10 @@ util.formatHex = function(hex, uc, d, pFix) {
   return hex;
 };
 
+/**
+ * -1234.98765
+ * -> '-1,234.98765'
+ */
 util.formatNumber = function(v) {
   var v0 = v + '';
   var v1 = '';
@@ -964,15 +1026,74 @@ util.formatNumber = function(v) {
   return r;
 };
 
-util.array2set = function(array) {
-  var set = [];
-  for (var i = 0; i < array.length; i++) {
-    var val = array[i];
-    if (!util.hasValue(set, val)) {
-      set.push(val);
-    }
+/**
+ * '-0102.3040'
+ * -> '-102.304'
+ */
+util.trimZeros = function(v) {
+  v += '';
+  v = v.trim();
+  var s = '';
+  if (v.charAt(0) == '-') {
+    s = '-';
+    v = v.substr(1);
   }
-  return set;
+  var p = v.split('.');
+  var i = p[0];
+  var d = '';
+  if (p.length > 1) d = p[1];
+  i = i.replace(/^0+/, '');
+  d = d.replace(/0+$/, '');
+  if (i == '') i = '0';
+  var r = i;
+  if (d != '') r += '.' + d;
+  if (r != '0') r = s + r;
+  return r;
+};
+
+/**
+ * ['a', 'b', 'c', 'b', 'a', 'a']
+ * -> ['a', 'b', 'c']
+ */
+util.toUniqueValues = function(arr, srt) {
+  var o = util.countByValues(arr, srt);
+  var v = [];
+  for (var k in o) {
+    v.push({key: k, cnt: o[k]});
+  }
+  if (srt == 'asc|count') {
+    v.sort(function(a, b) {
+      return a.cnt - b.cnt;
+    });
+  } else if (srt == 'desc|count') {
+    v.sort(function(a, b) {
+      return b.cnt - a.cnt;
+    });
+  }
+  var r = [];
+  for (var i = 0; i < v.length; i++) {
+    r.push(v[i].key);
+  }
+  if (srt == 'asc|val') {
+    r.sort();
+  } else if (srt == 'desc|val') {
+    r.sort().reverse();
+  }
+  return r;
+};
+
+/**
+ * ['a', 'b', 'c', 'b', 'a', 'a']
+ * -> {'a': 3, 'b': 2, 'c': 1}
+ */
+util.countByValues = function(arr) {
+  var o = {};
+  for (var i = 0; i < arr.length; i++) {
+    var v = arr[i];
+    if (o[v] == undefined) o[v] = 0;
+    o[v]++;
+  }
+  return o;
 };
 
 util.hasValue = function(array, value) {
@@ -3057,6 +3178,7 @@ util.Meter.prototype = {
     this.redraw();
   },
   _setValue: function(v) {
+    v |= 0;
     var opt = this.opt;
     if (v > opt.max) {
       v = opt.max;
@@ -3076,6 +3198,7 @@ util.Meter.prototype = {
   increase: function(v) {
     var opt = this.opt;
     if (v == undefined) v = 1;
+    v |= 0;
     this.value += v;
     if (this.value > opt.max) this.value = opt.max;
     this.redraw();
@@ -3083,28 +3206,29 @@ util.Meter.prototype = {
   decrease: function(v) {
     var opt = this.opt;
     if (v == undefined) v = 1;
+    v |= 0;
     this.value -= v;
     if (this.value < opt.min) this.value = opt.min;
     this.redraw();
   },
   setMin: function(v) {
-    this.opt.min = v;
+    this.opt.min = v | 0;
     this.redraw();
   },
   setMax: function(v) {
-    this.opt.max = v;
+    this.opt.max = v | 0;
     this.redraw();
   },
   setLow: function(v) {
-    this.opt.low = v;
+    this.opt.low = v | 0;
     this.redraw();
   },
   setHigh: function(v) {
-    this.opt.high = v;
+    this.opt.high = v | 0;
     this.redraw();
   },
   setOptimum: function(v) {
-    this.optimum = v;
+    this.optimum = v | 0;
     this.redraw();
   },
   redraw: function() {
@@ -3344,6 +3468,67 @@ util.getUrlHash = function() {
   var s = window.location.hash;
   if (s) s = s.substr(1);
   return s;
+};
+
+//-----------------------------------------------------------------------------
+// Browser
+//-----------------------------------------------------------------------------
+util.getBrowserType = function(ua) {
+  if (ua == undefined) ua = navigator.userAgent;
+  var ver;
+  var brws = {name: '', version: ''};
+  if (ua.indexOf('Edge') >= 1) {
+    brws.name = 'Edge Legacy';
+    ver = ua.match(/Edge\/(.*)/);
+    if (ver) brws.version = ver[1];
+    return brws;
+  }
+  if (ua.indexOf('Edg') >= 1) {
+    brws.name = 'Edge';
+    ver = ua.match(/Edg\/(.*)/);
+    if (ver) brws.version = ver[1];
+    return brws;
+  }
+  if (ua.indexOf('OPR/') >= 1) {
+    brws.name = 'Opera';
+    ver = ua.match(/OPR\/(.*)/);
+    if (ver) brws.version = ver[1];
+    return brws;
+  }
+  if (ua.indexOf('Chrome') >= 1) {
+    brws.name = 'Chrome';
+    ver = ua.match(/Chrome\/(.*)\s/);
+    if (ver) brws.version = ver[1];
+    return brws;
+  }
+  if (ua.indexOf('Firefox') >= 1) {
+    brws.name = 'Firefox';
+    ver = ua.match(/Firefox\/(.*)/);
+    if (ver) brws.version = ver[1];
+    return brws;
+  }
+  if (ua.indexOf('Trident/7.') >= 1) {
+    brws.name = 'IE11';
+    brws.family = 'IE';
+    return brws;
+  }
+  if (ua.indexOf('Trident/6.') >= 1) {
+    brws.name = 'IE10';
+    brws.family = 'IE';
+    return brws;
+  }
+  if (ua.indexOf('Trident/5.') >= 1) {
+    brws.name = 'IE9';
+    brws.family = 'IE';
+    return brws;
+  }
+  if ((ua.indexOf('Safari/') >= 1) && (ua.indexOf('Version/') >= 1)) {
+    brws.name = 'Safari';
+    ver = ua.match(/Version\/(.*)\sSafari/);
+    if (ver) brws.version = ver[1];
+    return brws;
+  }
+  return brws;
 };
 
 //-----------------------------------------------------------------------------
