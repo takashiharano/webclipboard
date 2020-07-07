@@ -5,7 +5,7 @@
  * https://github.com/takashiharano/util.js
  */
 var util = util || {};
-util.v = '202005312006';
+util.v = '202007060100';
 
 util.DFLT_FADE_SPEED = 500;
 util.LS_AVAILABLE = false;
@@ -385,19 +385,10 @@ util.ClockTime = function(secs, days, integratedSt, clocklikeSt) {
   this.clocklikeSt = clocklikeSt;
 };
 util.ClockTime.prototype = {
-  // byTheDay=true
-  //         '01:00:00.000 (+1 Day)'
-  // (HM   ) '01:00'
-  // (HMS  ) '01:00:00'
-  // (HMSs ) '01:00:00.000'
-  // (HMSsD) '01:00:00.000 (+1 Day)'
-  //
-  // byTheDay=false
-  //         '25:00:00.000'
-  // (HM   ) '25:00'
-  // (HMS  ) '25:00:00'
-  // (HMSs ) '25:00:00.000'
-  // (HMSsD) '25:00:00.000'
+  // %H:%m            '25:00'
+  // %H:%m:%S         '25:00:00'
+  // %H:%m:%S.%s      '25:00:00.000'
+  // %H:%m:%S.%s (%d) '01:00:00.000 (+1 Day)'
   toString: function(fmt) {
     if (!fmt) fmt = '%H:%m:%S.%s (%d)';
     var byTheDay = fmt.match(/%d/) != null;
@@ -479,12 +470,14 @@ util.ClockTime.prototype = {
   }
 };
 
-// Add time
-// '12:00' + '01:30' -> '13:30'
-// '12:00' + '13:00' -> '01:00 (+1 Day)' / '25:00'
-// fmt:
-// '10:00:00.000 (+1 Day)'
-//  %H:%m:%S.%s (%d)
+/**
+ * Add time
+ * '12:00' + '01:30' -> '13:30'
+ * '12:00' + '13:00' -> '01:00 (+1 Day)' / '25:00'
+ * fmt:
+ * '10:00:00.000 (+1 Day)'
+ *  %H:%m:%S.%s (%d)
+ */
 util.addTime = function(t1, t2, fmt) {
   if (!fmt) fmt = '%H:%m';
   var s1 = util.time2sec(t1);
@@ -492,7 +485,6 @@ util.addTime = function(t1, t2, fmt) {
   var t = util._addTime(s1, s2);
   return t.toString(fmt);
 };
-
 // Returns ClockTime object
 util._addTime = function(t1, t2) {
   var totalSecs = t1 + t2;
@@ -505,27 +497,26 @@ util._addTime = function(t1, t2) {
   return util._calcTime(totalSecs, wkSecs, days);
 };
 
-// Sub time
-// '12:00' - '01:30' -> '10:30'
-// '12:00' - '13:00' -> '23:00 (-1 Day)' / '-01:00'
-// fmt:
-// '10:00:00.000 (-1 Day)'
-//  %H:%m:%S.%s (%d)
+/**
+ * Sub time
+ * '12:00' - '01:30' -> '10:30'
+ * '12:00' - '13:00' -> '23:00 (-1 Day)' / '-01:00'
+ * fmt:
+ * '10:00:00.000 (-1 Day)'
+ *  %H:%m:%S.%s (%d)
+ */
 util.subTime = function(t1, t2, fmt) {
   if (!fmt) fmt = '%H:%m';
-
   var s1 = util.time2sec(t1);
   var s2 = util.time2sec(t2);
   var t = util._subTime(s1, s2);
   return t.toString(fmt);
 };
-
 // Returns ClockTime object
 util._subTime = function(t1, t2) {
   var totalSecs = t1 - t2;
   var wkSecs = totalSecs;
   var days = 0;
-
   if (wkSecs < 0) {
     wkSecs *= -1;
     days = (wkSecs / util.DAY_SEC) | 0;
@@ -537,7 +528,58 @@ util._subTime = function(t1, t2) {
     }
     wkSecs = util.DAY_SEC - (wkSecs - days * util.DAY_SEC);
   }
+  return util._calcTime(totalSecs, wkSecs, days);
+};
 
+/**
+ * Multiply time
+ * '01:30' * 2 -> '03:00'
+ * '12:00' * 3 -> '12:00 (+1 Day)' / '36:00'
+ * fmt:
+ * '10:00:00.000 (+1 Day)'
+ *  %H:%m:%S.%s (%d)
+ */
+util.multiTime = function(t, v, fmt) {
+  if (!fmt) fmt = '%H:%m';
+  var s = util.time2sec(t);
+  var c = util._multiTime(s, v);
+  return c.toString(fmt);
+};
+// Returns ClockTime object
+util._multiTime = function(s, v) {
+  var totalSecs = s * v;
+  var wkSecs = totalSecs;
+  var days = 0;
+  if (wkSecs >= util.DAY_SEC) {
+    days = (wkSecs / util.DAY_SEC) | 0;
+    wkSecs -= days * util.DAY_SEC;
+  }
+  return util._calcTime(totalSecs, wkSecs, days);
+};
+
+/**
+ * Divide time
+ * '03:00' / 2 -> '01:30'
+ * '72:00' / 3 -> '00:00 (+1 Day)' / '24:00'
+ * fmt:
+ * '10:00:00.000 (+1 Day)'
+ *  %H:%m:%S.%s (%d)
+ */
+util.divTime = function(t, v, fmt) {
+  if (!fmt) fmt = '%H:%m';
+  var s = util.time2sec(t);
+  var c = util._divTime(s, v);
+  return c.toString(fmt);
+};
+// Returns ClockTime object
+util._divTime = function(s, v) {
+  var totalSecs = s / v;
+  var wkSecs = totalSecs;
+  var days = 0;
+  if (wkSecs >= util.DAY_SEC) {
+    days = (wkSecs / util.DAY_SEC) | 0;
+    wkSecs -= days * util.DAY_SEC;
+  }
   return util._calcTime(totalSecs, wkSecs, days);
 };
 
@@ -749,6 +791,9 @@ util.roundAngle = function(v) {
 };
 
 //-----------------------------------------------------------------------------
+/**
+ * 0-2147483647
+ */
 util.random = function(min, max) {
   min = parseInt(min);
   max = parseInt(max);
@@ -763,12 +808,12 @@ util.random = function(min, max) {
 };
 
 /**
- * randomString(len)
- * randomString(tbl)
- * randomString(tbl, len)
- * randomString(tbl, min, max)
+ * getRandomString(len)
+ * getRandomString(tbl)
+ * getRandomString(tbl, len)
+ * getRandomString(tbl, minLen, maxLen)
  */
-util.randomString = function(a1, a2, a3) {
+util.getRandomString = function(a1, a2, a3) {
   var DFLT_LEN = 8;
   var min = -1;
   var max = -1;
@@ -778,7 +823,6 @@ util.randomString = function(a1, a2, a3) {
   } else if (typeof a1 == 'number') {
     min = a1;
   }
-
   if (typeof a2 == 'number') {
     if (min == -1) {
       min = a2;
@@ -789,7 +833,6 @@ util.randomString = function(a1, a2, a3) {
   if (typeof a3 == 'number') {
     max = a3;
   }
-
   if (!tbl) tbl = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   if (typeof tbl == 'string') tbl = tbl.split('');
   if (min == -1) min = DFLT_LEN;
@@ -1051,60 +1094,6 @@ util.trimZeros = function(v) {
   return r;
 };
 
-/**
- * ['a', 'b', 'c', 'b', 'a', 'a']
- * -> ['a', 'b', 'c']
- */
-util.toUniqueValues = function(arr, srt) {
-  var o = util.countByValues(arr, srt);
-  var v = [];
-  for (var k in o) {
-    v.push({key: k, cnt: o[k]});
-  }
-  if (srt == 'asc|count') {
-    v.sort(function(a, b) {
-      return a.cnt - b.cnt;
-    });
-  } else if (srt == 'desc|count') {
-    v.sort(function(a, b) {
-      return b.cnt - a.cnt;
-    });
-  }
-  var r = [];
-  for (var i = 0; i < v.length; i++) {
-    r.push(v[i].key);
-  }
-  if (srt == 'asc|val') {
-    r.sort();
-  } else if (srt == 'desc|val') {
-    r.sort().reverse();
-  }
-  return r;
-};
-
-/**
- * ['a', 'b', 'c', 'b', 'a', 'a']
- * -> {'a': 3, 'b': 2, 'c': 1}
- */
-util.countByValues = function(arr) {
-  var o = {};
-  for (var i = 0; i < arr.length; i++) {
-    var v = arr[i];
-    if (o[v] == undefined) o[v] = 0;
-    o[v]++;
-  }
-  return o;
-};
-
-util.hasValue = function(array, value) {
-  for (var i = 0; i < array.length; i++) {
-    if (array[i] == value) {
-      return true;
-    }
-  }
-  return false;
-};
-
 util.plural = function(s, n) {
   return (n >= 2 ? (s + 's') : s);
 };
@@ -1205,6 +1194,152 @@ util.strp = function(tbl, idx) {
   return s;
 };
 
+
+//-----------------------------------------------------------------------------
+// Array
+//-----------------------------------------------------------------------------
+util.arr = {};
+/**
+ * ['A', 'B', 'C', '1', 1], 'A'
+ * -> 0
+ *
+ * ['A', 'B', 'C', '1', 1], 1, false
+ * -> 3
+ *
+ * ['A', 'B', 'C', '1', 1], 1, true
+ * -> 4
+ */
+util.arr.pos = function(a, v, f) {
+  var r = -1;
+  for (var i = 0; i < a.length; i++) {
+    if ((!f && (a[i] == v)) || (f && (a[i] === v))) {
+      r = i;
+      break;
+    }
+  }
+  return r;
+};
+
+/**
+ * ['A', 'B', 'A'], 'A'
+ * -> 2
+ *
+ * ['A', 'B', 'A'], 'Z'
+ * -> 0
+ */
+util.arr.count = function(a, v, f) {
+  var c = 0;
+  for (var i = 0; i < a.length; i++) {
+    if ((!f && (a[i] == v)) || (f && (a[i] === v))) c++;
+  }
+  return c;
+};
+
+/**
+ * ['A', 'B', 'C', 'B', 'A', 'A']
+ * -> {'A': 3, 'B': 2, 'C': 1}
+ */
+util.arr.countByValue = function(arr) {
+  var o = {};
+  for (var i = 0; i < arr.length; i++) {
+    var v = arr[i];
+    if (o[v] == undefined) o[v] = 0;
+    o[v]++;
+  }
+  return o;
+};
+
+/**
+ * ['A', 'B', 'C'], 'B'
+ * -> ['A', 'C']
+ */
+util.arr.del = function(arr, v) {
+  for (var i = 0; i < arr.length; i++) {
+    if (arr[i] == v) {
+      arr.splice(i--, 1);
+    }
+  }
+};
+
+/**
+ * ['A', 'B', 'C'], 'A'
+ * -> true
+ *
+ * ['A', 'B', 'C'], 'Z'
+ * -> false
+ */
+util.arr.hasValue = function(a, v, f) {
+  return (util.arr.pos(a, v, f) >= 0);
+};
+
+/**
+ * ['A', 'B', 'C'], 'A'
+ * -> 'B'
+ */
+util.arr.next = function(a, v) {
+  var r = a[0];
+  for (var i = 0; i < a.length; i++) {
+    if ((a[i] == v) && (i < (a.length - 1))) {
+      r = a[i + 1];break;
+    }
+  }
+  return r;
+};
+
+/**
+ * ['A', 'B', 'C'], 'A'
+ * -> 'C'
+ */
+util.arr.prev = function(a, v) {
+  var r = a[a.length - 1];
+  for (var i = 0; i < a.length; i++) {
+    if ((a[i] == v) && (i > 0)) {
+      r = a[i - 1];break;
+    }
+  }
+  return r;
+};
+
+/**
+ * ['A', 'B', 'C', 'B', 'A', 'A']
+ * -> ['A', 'B', 'C']
+ */
+util.arr.toUniqueValues = function(arr, srt) {
+  var o = util.arr.countByValue(arr, srt);
+  var v = [];
+  for (var k in o) {
+    v.push({key: k, cnt: o[k]});
+  }
+  if (srt == 'asc|count') {
+    v.sort(function(a, b) {
+      return a.cnt - b.cnt;
+    });
+  } else if (srt == 'desc|count') {
+    v.sort(function(a, b) {
+      return b.cnt - a.cnt;
+    });
+  }
+  var r = [];
+  for (var i = 0; i < v.length; i++) {
+    r.push(v[i].key);
+  }
+  if (srt == 'asc|val') {
+    r.sort();
+  } else if (srt == 'desc|val') {
+    r.sort().reverse();
+  }
+  return r;
+};
+
+//-----------------------------------------------------------------------------
+util.addListener = function(listeners, fn) {
+  if (listeners && !util.arr.hasValue(listeners, fn)) listeners.push(fn);
+};
+
+util.removeListener = function(listeners, fn) {
+  if (listeners) util.arr.del(listeners, fn);
+};
+
 //-----------------------------------------------------------------------------
 // HTTP
 //-----------------------------------------------------------------------------
@@ -1234,12 +1369,12 @@ util.strp = function(tbl, idx) {
  */
 util.http = function(req) {
   var trc = util.http.trace;
-  var trcid = util.randomString('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 8);
+  var trcid = util.getRandomString(util.http.trcIdChars, util.http.trcIdLen);
   req.trcid = trcid;
   if (util.http.conn == 0) {
     util.http.onStart();
   }
-  if (!util.http.onB4Send(req)) {
+  if (!util.http.onSend(req)) {
     if (util.http.conn == 0) {
       util.http.onStop();
     }
@@ -1261,7 +1396,7 @@ util.http = function(req) {
     }
   }
   if (data instanceof Object) {
-    data = util.http.buildParam(data);
+    data = util.http.buildQueryString(data);
   }
   var url = req.url;
   if (data && (req.method == 'GET')) {
@@ -1296,6 +1431,7 @@ util.http = function(req) {
     util._log.v(m);
   }
   xhr.send(data);
+  util.http.onSent(req);
 };
 util.http.onDone = function(xhr, req) {
   var res = xhr.responseText;
@@ -1313,7 +1449,7 @@ util.http.onDone = function(xhr, req) {
   }
   if (util.http.onReceive(xhr, res, req)) {
     if (xhr.status == 200) {
-      if (util.jsonable(xhr, req)) {
+      if (util.http.isJSONable(xhr, req)) {
         res = util.fromJSON(res);
       }
     }
@@ -1330,15 +1466,7 @@ util.http.onDone = function(xhr, req) {
     util.http.onStop();
   }
 };
-util.jsonable = function(xhr, req) {
-  var ct = xhr.getResponseHeader('Content-Type');
-  if (ct) ct = ct.split(';')[0];
-  if ((req.responseType == 'json') || ((!req.responseType) && (ct == 'application/json'))) {
-    return true;
-  }
-  return false;
-};
-util.http.buildParam = function(p) {
+util.http.buildQueryString = function(p) {
   var s = '';
   var cnt = 0;
   for (var k in p) {
@@ -1350,20 +1478,29 @@ util.http.buildParam = function(p) {
   }
   return s;
 };
+util.http.isJSONable = function(xhr, req) {
+  var ct = xhr.getResponseHeader('Content-Type');
+  if (ct) ct = ct.split(';')[0];
+  if ((req.responseType == 'json') || ((!req.responseType) && (ct == 'application/json'))) {
+    return true;
+  }
+  return false;
+};
 
 /**
- * addListener('start|stop|error', fn);
+ * addListener('start|send|receive|stop|error', fn);
  */
 util.http.addListener = function(type, fn) {
-  if (util.http.listeners[type]) {
-    util.http.listeners[type].push(fn);
-  }
+  util.addListener(util.http.listeners[type], fn);
 };
 util.http.onStart = function() {
   util.http.callListeners('start');
 };
-util.http.onB4Send = function(req) {
-  return util.http.callListeners('beforesend', req);
+util.http.onSend = function(req) {
+  return util.http.callListeners('send', req);
+};
+util.http.onSent = function(req) {
+  return util.http.callListeners('sent', req);
 };
 util.http.onReceive = function(xhr, res, req) {
   return util.http.callListeners('receive', xhr, res, req);
@@ -1385,14 +1522,23 @@ util.http.callListeners = function(type, a1, a2, a3) {
 util.http.countConnections = function() {
   return util.http.conn;
 };
+util.http.setTraceIdChars = function(c) {
+  util.http.trcIdChars = c;
+};
+util.http.setTraceIdLen = function(n) {
+  util.http.trcIdLen = n;
+};
 util.http.LOG_LIMIT = 3145728;
 util.http.MAX_LOG_LEN = 4096;
 util.http.logging = false;
 util.http.trace = false;
 util.http.conn = 0;
+util.http.trcIdChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+util.http.trcIdLen = 4;
 util.http.listeners = {
   start: [],
-  beforesend: [],
+  send: [],
+  sent: [],
   receive: [],
   stop: [],
   error: []
@@ -1762,17 +1908,27 @@ util._registerStyle = function() {
   style += '.pseudo-link:hover {';
   style += 'text-decoration: underline;';
   style += '}';
-  style += '.blink {';
-  style += 'animation: blinker 1.5s step-end infinite;';
-  style += '}';
+
+  style += '.blink {animation: blinker 1.5s step-end infinite;}';
   style += '@keyframes blinker {';
-  style += '50% {';
-  style += 'opacity: 0;';
+  style += '50% {opacity: 0;}';
+  style += '100% {opacity: 0;}';
   style += '}';
-  style += '100% {';
-  style += 'opacity: 0;';
+
+  style += '.blink2 {animation: blinker2 1s ease-in-out infinite alternate;}';
+  style += '@keyframes blinker2 {';
+  style += '0% {opacity: 0;}';
+  style += '70% {opacity: 1;}';
   style += '}';
+
+  style += '.progdot:after {content:"..."; animation: progdot1 1.2s linear infinite;}';
+  style += '@keyframes progdot1 {';
+  style += '10% {content: "";}';
+  style += '20% {content: ".";}';
+  style += '30% {content: "..";}';
+  style += '40% {content: "...";}';
   style += '}';
+
   style += '.dialog {';
   style += 'background: #fff;';
   style += 'color: #000;';
@@ -3772,21 +3928,11 @@ util.event.addListener = function(name, fn) {
   if (!util.event.listeners[name]) {
     util.event.listeners[name] = [];
   }
-  util.event.listeners[name].push(fn);
+  util.addListener(util.event.listeners[name], fn);
 };
 
 util.event.removeListener = function(name, fn) {
-  var listeners = util.event.listeners[name];
-  if (!listeners) {
-    return;
-  }
-  var newList = [];
-  for (var i = 0; i < listeners.length; i++) {
-    if (listeners[i] != fn) {
-      newList.push(listeners[i]);
-    }
-  }
-  util.event.listeners[name] = newList;
+  util.removeListener(util.event.listeners[name], fn);
 };
 
 util.event.send = function(name, data) {
