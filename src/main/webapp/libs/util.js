@@ -2,10 +2,10 @@
  * util.js
  * Copyright 2019 Takashi Harano
  * Released under the MIT license
- * https://github.com/takashiharano/util.js
+ * https://github.com/takashiharano/util
  */
 var util = util || {};
-util.v = '202007060100';
+util.v = '202007300000';
 
 util.DFLT_FADE_SPEED = 500;
 util.LS_AVAILABLE = false;
@@ -76,6 +76,7 @@ util.SATURDAY = 6;
 util.WDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
 /**
+ * DateTime class
  * dt
  *  Date / seconds / milli seconds / date-string
  * offset
@@ -331,21 +332,26 @@ util.diffDays = function(ms1, ms2, abs) {
 };
 
 //-----------------------------------------------------------------------------
+/**
+ * Time class
+ * t
+ *   millis / '12:34:56.789'
+ */
 util.Time = function(t) {
   if (typeof t == 'string') {
     // HH:MI:SS.sss
     var wk = t.split('.');
-    var sss = wk[1];
+    var sss = wk[1] | 0;
     if (sss) {
-      sss = (sss + '000').substr(0, 3);
+      sss = (sss + '000').substr(0, 3) | 0;
     }
     wk = wk[0].split(':');
     var hh = wk[0] | 0;
     var mi = wk[1] | 0;
     var ss = wk[2] | 0;
-    t = hh * 3600000 + mi * 60000 + ss * 1000 + sss;
+    t = (hh * 3600 + mi * 60 + ss) * 1000 + sss;
   }
-  this.time = t;
+  this.millis = t;
   var tm = util.ms2struct(t);
   this.sign = tm.sign;
   this.days = tm.d;
@@ -356,18 +362,51 @@ util.Time = function(t) {
   this.milliseconds = tm.sss;
 };
 util.Time.prototype = {
+  /**
+   * To string the time.
+   *
+   * fmt
+   *  '%Ddays %HH:%mm:%SS.%sss'
+   *  '%Hhr %m\\m %Ss %s'
+   */
   toString: function(fmt) {
-    if (!fmt) fmt = '%H:%m:%S.%s';
+    if (!fmt) fmt = '%HH:%mm:%SS.%sss';
+    var d = this.days;
     var h = this.hours;
-    if (h < 10) h = '0' + h;
-    var m = ('0' + this.minutes).slice(-2);
-    var s = ('0' + this.seconds).slice(-2);
-    var ms = ('00' + this.milliseconds).slice(-3);
+    var m = this.minutes;
+    var s = this.seconds;
+    var ms = this.milliseconds;
+
+    if (fmt.match(/%D/)) h = this.hrs;
+    if (!fmt.match(/%H/)) m += h * 60;
+    if (!fmt.match(/%m/)) s += m * 60;
+    if (!fmt.match(/%S/)) ms += s * 1000;
+
+    d += '';
+    h += '';
+    m += '';
+    s += '';
+    ms += '';
+
+    var hh = h;
+    if (h < 10) hh = '0' + h;
+    var mm = ('0' + m).slice(-2);
+    var ss = ('0' + s).slice(-2);
+    var sss = ('00' + ms).slice(-3);
+
     var r = fmt;
+    r = r.replace(/%D/, d);
+    r = r.replace(/%HH/, hh);
     r = r.replace(/%H/, h);
+    r = r.replace(/%mm/, mm);
     r = r.replace(/%m/, m);
+    r = r.replace(/%SS/, ss);
     r = r.replace(/%S/, s);
+    r = r.replace(/%sss/, sss);
     r = r.replace(/%s/, ms);
+
+    // '%Hhr %m\\m %Ss %s\\' -> 12hr 34m 56s 789\
+    r = r.replace(/\\([^\\])/g, '$1');
     return r;
   }
 };
@@ -1129,7 +1168,7 @@ util.xlsCol = function(c) {
 };
 util.xlsColA2N = function(c) {
   var t = util.A2Z;
-  return util.pIndex(t, c.trim().toUpperCase());
+  return util.strpIndex(t, c.trim().toUpperCase());
 };
 util.xlsColN2A = function(n) {
   var t = util.A2Z;
@@ -1139,28 +1178,7 @@ util.xlsColN2A = function(n) {
 };
 
 /**
- * pIndex('ABC', 'A')  -> 1
- * pIndex('ABC', 'B')  -> 2
- * pIndex('ABC', 'AA') -> 4
- */
-util.pIndex = function(tbl, ptn) {
-  if (typeof tbl == 'string') tbl = tbl.split('');
-  var len = ptn.length;
-  var rdx = tbl.length;
-  var idx = 0;
-  for (var i = 0; i < len; i++) {
-    var d = len - i - 1;
-    var c = ptn.substr(d, 1);
-    var v = tbl.indexOf(c);
-    if (v == -1) return 0;
-    v++;
-    var n = v * Math.pow(rdx, i);
-    idx += n;
-  }
-  return idx;
-};
-
-/**
+ * String permutation.
  * strp('ABC', 1)  -> 'A'
  * strp('ABC', 2)  -> 'B'
  * strp('ABC', 4) -> 'AA'
@@ -1194,6 +1212,43 @@ util.strp = function(tbl, idx) {
   return s;
 };
 
+/**
+ * The index of the string permutation.
+ * strpIndex('ABC', 'A')  -> 1
+ * strpIndex('ABC', 'B')  -> 2
+ * strpIndex('ABC', 'AA') -> 4
+ */
+util.strpIndex = function(tbl, ptn) {
+  if (typeof tbl == 'string') tbl = tbl.split('');
+  var len = ptn.length;
+  var rdx = tbl.length;
+  var idx = 0;
+  for (var i = 0; i < len; i++) {
+    var d = len - i - 1;
+    var c = ptn.substr(d, 1);
+    var v = tbl.indexOf(c);
+    if (v == -1) return 0;
+    v++;
+    var n = v * Math.pow(rdx, i);
+    idx += n;
+  }
+  return idx;
+};
+
+/**
+ * Total count of the permutation pattern.
+ * strpTotal('ABC', 1) -> 3
+ * strpTotal('ABC', 2) -> 12
+ */
+util.strpTotal = function(tbl, d) {
+  if (typeof tbl == 'string') tbl = tbl.split('');
+  var c = tbl.length;
+  var n = 0;
+  for (var i = 1; i <= d; i++) {
+    n += Math.pow(c, i);
+  }
+  return n;
+};
 
 //-----------------------------------------------------------------------------
 // Array
@@ -3904,6 +3959,95 @@ util.RingBuffer.prototype = {
   size: function() {
     return this.len;
   }
+};
+
+//-----------------------------------------------------------------------------
+// Interval Proc
+//-----------------------------------------------------------------------------
+// {
+//   id: {
+//     fn: function(),
+//     interval: millis,
+//     async: true|false,
+//     tmrId: timer-id
+//   }
+// }
+util.intervalProcs = {};
+
+/**
+ * Register an interval proc.
+ */
+util.registerIntervalProc = function(id, fn, interval, async) {
+  util.intervalProcs[id] = {
+    fn: fn,
+    interval: interval,
+    async: (async ? true : false),
+    tmrId: 0
+  };
+};
+
+/**
+ * Remove an interval proc.
+ */
+util.removeIntervalProc = function(id) {
+  delete util.intervalProcs[id];
+};
+
+/**
+ * Start an interval proc.
+ */
+util.startIntervalProc = function(id, fn, interval, async) {
+  if (fn) util.registerIntervalProc(id, fn, interval, async);
+  var p = util.intervalProcs[id];
+  if (p) {
+    util._stopIntervalProc(p);
+    util.execIntervalProc(id);
+  }
+};
+
+/**
+ * Stop an interval proc.
+ */
+util.stopIntervalProc = function(id) {
+  var p = util.intervalProcs[id];
+  if (p) util._stopIntervalProc(p);
+};
+util._stopIntervalProc = function(p) {
+  if (p.tmrId > 0) {
+    clearTimeout(p.tmrId);
+    p.tmrId = 0;
+  }
+};
+
+/**
+ * Execute an interval proc.
+ */
+util.execIntervalProc = function(id) {
+  var p = util.intervalProcs[id];
+  if (p) {
+    p.fn();
+    if (!p.async) util.nextIntervalProc(id);
+  }
+};
+
+/**
+ * Sets a timer which executes an intefval proc function.
+ */
+util.nextIntervalProc = function(id, interval) {
+  var p = util.intervalProcs[id];
+  if (p) {
+    util._stopIntervalProc(p);
+    if (interval == undefined) interval = p.interval;
+    p.tmrId = setTimeout(util.execIntervalProc, interval, id);
+  }
+};
+
+/**
+ * Sets interval in milliseconds.
+ */
+util.setInterval = function(id, interval) {
+  var p = util.intervalProcs[id];
+  if (p) p.interval = interval;
 };
 
 //-----------------------------------------------------------------------------
