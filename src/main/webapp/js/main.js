@@ -210,7 +210,7 @@ main._clear = function() {
 };
 
 main.copy = function() {
-  util.copy2clpbd(main.textArea.value);
+  util.copy(main.textArea.value);
   main.infotip('OK');
 };
 

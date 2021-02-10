@@ -14,6 +14,7 @@ public class AppManager {
   private static final String MODULE_NAME = "webclp";
 
   private static AppManager instance;
+  private static Config config;
   private static String errorInfo;
 
   private AppManager() {
@@ -56,7 +57,7 @@ public class AppManager {
   }
 
   public static String getAppHome() {
-    return Config.getValue("app_home");
+    return config.getValue("app_home");
   }
 
   private static void init() {
@@ -77,7 +78,38 @@ public class AppManager {
     int logLevel = Log.LogLevel.DEBUG.getLevel();
     Log.init(logLevel, MODULE_NAME);
     String propFilePath = home + "/webappconf/" + MODULE_NAME + ".properties";
-    Config.load(propFilePath);
+    config = new Config(propFilePath);
+
+    long validity = 0;
+    try {
+      validity = config.getLongValue("clipboard_validity_sec");
+    } catch (Exception e) {
+    }
+    Clipboard.init(validity);
+  }
+
+  public static String getConfigValue(String key) {
+    return config.getValue(key);
+  }
+
+  public static String getConfigValue(String key, String defaultValue) {
+    return config.getValue(key);
+  }
+
+  public static int getConfigIntValue(String key) {
+    return config.getIntValue(key);
+  }
+
+  public static float getConfigFloatValue(String key) {
+    return config.getFloatValue(key);
+  }
+
+  public static double getConfigDoubleValue(String key) {
+    return config.getDoubleValue(key);
+  }
+
+  public static boolean getConfigBooleanValue(String key) {
+    return config.getBooleanValue(key);
   }
 
   /**

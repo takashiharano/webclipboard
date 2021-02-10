@@ -5,55 +5,12 @@
  * https://github.com/takashiharano/util
  */
 var util = util || {};
-util.v = '202007300000';
+util.v = '202102090000';
 
 util.DFLT_FADE_SPEED = 500;
 util.LS_AVAILABLE = false;
 util.mouseX = 0;
 util.mouseY = 0;
-
-/*\
-|*| Polyfill which enables the passage of arbitrary arguments to the
-|*| callback functions of JavaScript timers (HTML5 standard syntax).
-|*|
-|*| https://developer.mozilla.org/en-US/docs/DOM/window.setInterval
-|*|
-|*| Syntax:
-|*| var timeoutID = window.setTimeout(func, delay[, param1, param2, ...]);
-|*| var timeoutID = window.setTimeout(code, delay);
-|*| var intervalID = window.setInterval(func, delay[, param1, param2, ...]);
-|*| var intervalID = window.setInterval(code, delay);
-\*/
-(function() {
-  setTimeout(function(arg1) {
-    if (arg1 === 'test') {
-      // feature test is passed, no need for polyfill
-      return;
-    }
-    var __nativeST__ = window.setTimeout;
-    window.setTimeout = function(vCallback, nDelay /*, argumentToPass1, argumentToPass2, etc. */) {
-      var aArgs = Array.prototype.slice.call(arguments, 2);
-      return __nativeST__(vCallback instanceof Function ? function() {
-        vCallback.apply(null, aArgs);
-      } : vCallback, nDelay);
-    };
-  }, 0, 'test');
-
-  var interval = setInterval(function(arg1) {
-    clearInterval(interval);
-    if (arg1 === 'test') {
-      // feature test is passed, no need for polyfill
-      return;
-    }
-    var __nativeSI__ = window.setInterval;
-    window.setInterval = function(vCallback, nDelay /*, argumentToPass1, argumentToPass2, etc. */) {
-      var aArgs = Array.prototype.slice.call(arguments, 2);
-      return __nativeSI__(vCallback instanceof Function ? function() {
-        vCallback.apply(null, aArgs);
-      } : vCallback, nDelay);
-    };
-  }, 0, 'test');
-}());
 
 //-----------------------------------------------------------------------------
 // Date & Time
@@ -77,54 +34,70 @@ util.WDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
 /**
  * DateTime class
- * dt
- *  Date / seconds / milli seconds / date-string
- * offset
- *  minutes (-0800=480 / +0000=0 / +0900=-540)
+ * src:
+ *  timestamp (millis from 1970-01-01T00:00:00Z) / Date-Time-String / Date object
+ * tzOffset: (OPT)
+ *  -480='-0800' / 0='+0000'='Z' / 540='+0900'
  */
-util.DateTime = function(dt, offset) {
-  if ((dt == undefined) || (dt === '')) {
+util.DateTime = function(src, tzOffset) {
+  var dt, st;
+  if (!src && (src !== 0)) {
     dt = new Date();
-  } else if (!(dt instanceof Date)) {
-    if (typeof dt == 'number') {
-      if ((dt + '').match(/\./)) {
-        dt = util.sec2ms(dt);
-      }
-    }
-    dt = new Date(dt);
-  }
-  this.timestamp = dt.getTime();
-  var os = dt.getTimezoneOffset();
-  if (offset == undefined) {
-    this.offset = os;
+  } else if (typeof src == 'string') {
+    st = util.datetime2struct(src);
+    dt = new Date(st.year, st.month - 1, st.day, st.hour, st.minute, st.second);
+  } else if (src instanceof Date) {
+    dt = src;
   } else {
-    this.offset = offset;
-    var ts = this.timestamp + (os - offset) * 60000;
-    dt = new Date(ts);
+    dt = new Date(src);
   }
+  var timestamp = dt.getTime();
+
+  if (tzOffset == undefined) {
+    tzOffset = util.getTZ();
+  } else {
+    var os = tzOffset;
+    if (typeof os == 'string') os = util.getTzLocalOffset(os);
+    dt = new Date(timestamp + os);
+    timestamp = dt.getTime();
+  }
+
+  if (st) {
+    timestamp += st.millisecond;
+    if (st.tz != '') {
+      var tzdf = util.getTzLocalOffset(st.tz);
+      timestamp -= tzdf;
+    }
+  }
+
+  var tzOffsetMin = tzOffset;
+  if (typeof tzOffset == 'string') tzOffsetMin = util.tz2ms(tzOffset) / 60000;
   var year = dt.getFullYear();
   var month = dt.getMonth() + 1;
   var day = dt.getDate();
-  var hours = dt.getHours();
-  var minutes = dt.getMinutes();
-  var seconds = dt.getSeconds();
-  var milliseconds = dt.getMilliseconds();
+  var hour = dt.getHours();
+  var minute = dt.getMinutes();
+  var second = dt.getSeconds();
+  var millisecond = (st ? st.millisecond : dt.getMilliseconds());
 
+  this.timestamp = timestamp;
   this.year = year;
   this.month = month;
   this.day = day;
-  this.hours = hours;
-  this.minutes = minutes;
-  this.seconds = seconds;
-  this.milliseconds = milliseconds;
+  this.hour = hour;
+  this.minute = minute;
+  this.second = second;
+  this.millisecond = millisecond;
+  this.tzOffset = tzOffset;
+  this.tzOffsetMin = tzOffsetMin;
 
   this.yyyy = year + '';
   this.mm = ('0' + month).slice(-2);
   this.dd = ('0' + day).slice(-2);
-  this.hh = ('0' + hours).slice(-2);
-  this.mi = ('0' + minutes).slice(-2);
-  this.ss = ('0' + seconds).slice(-2);
-  this.sss = ('00' + milliseconds).slice(-3);
+  this.hh = ('0' + hour).slice(-2);
+  this.mi = ('0' + minute).slice(-2);
+  this.ss = ('0' + second).slice(-2);
+  this.sss = ('00' + millisecond).slice(-3);
   this.wday = dt.getDay(); // Sunday - Saturday : 0 - 6
   this.WDAYS = util.WDAYS;
 };
@@ -132,9 +105,9 @@ util.DateTime.prototype = {
   setWdays: function(wdays) {
     this.WDAYS = wdays;
   },
-  // +0900 / e=true: +09:00
-  getTZ: function(e) {
-    return util.formatTZ(this.offset, e);
+  // -> '+0900' / ext=true: '+09:00'
+  getTZ: function(ext) {
+    return util.formatTZ(this.tzOffsetMin, ext);
   },
   toString: function(fmt) {
     if (!fmt) fmt = '%Y-%M-%D %H:%m:%S.%s %Z';
@@ -149,16 +122,100 @@ util.DateTime.prototype = {
     s = s.replace(/%s/, this.sss);
     s = s.replace(/%z/, this.getTZ());
     s = s.replace(/%Z/, this.getTZ(true));
+    s = s.replace(/%N/, util.getTzName());
     return s;
   }
 };
 
+util.datetime2struct = function(s) {
+  var w = s;
+  var tz = '';
+  if (w.length > 10) {
+    var zPos = util._getTzPos(w);
+    if (zPos != -1) {
+      tz = w.substr(zPos);
+      w = w.substr(0, zPos);
+    }
+  }
+  w = util.serializeDateTimeString(w);
+  var yyyy = w.substr(0, 4) | 0;
+  var mm = w.substr(4, 2) | 0;
+  var dd = w.substr(6, 2) | 0;
+  var hh = w.substr(8, 2) | 0;
+  var mi = w.substr(10, 2) | 0;
+  var ss = w.substr(12, 2) | 0;
+  var sss = w.substr(14, 3) | 0;
+  var st = {
+    year: yyyy,
+    month: mm,
+    day: dd,
+    hour: hh,
+    minute: mi,
+    second: ss,
+    millisecond: sss,
+    tz: tz
+  };
+  return st;
+};
+util._getTzPos = function(s) {
+  var p = s.indexOf('Z');
+  if (p != -1) return p;
+  var tzSign = '+';
+  var tzSnCnt = util.countStr(s, tzSign);
+  if (tzSnCnt == 1) return s.indexOf(tzSign);
+  tzSign = '-';
+  tzSnCnt = util.countStr(s, tzSign);
+  if (tzSnCnt > 0) return s.indexOf(tzSign, s.length - 6);
+  return -1;
+};
+
 /**
- * Returns DateTime object
- * dt: timestamp / Date object
+ * Format the date and time string in YYYYMMDDHHMISSsss format
+ * 20200920                -> 20200920000000000
+ * 20200920T1234           -> 20200920123400000
+ * 20200920T123456.789     -> 20200920123456789
+ * 2020-09-20 12:34:56.789 -> 20200920123456789
+ * 2020/9/3 12:34:56.789   -> 20200903123456789
  */
-util.getDateTime = function(dt) {
-  return new util.DateTime(dt);
+util.serializeDateTimeString = function(s) {
+  var w = s;
+  w = w.trim().replace(/\s{2,}/g, ' ');
+  w = w.replace(/T/, ' ');
+  if (!w.match(/[-/:]/)) return util._serializeDateTimeString(w);
+
+  var prt = w.split(' ');
+  var date = prt[0];
+  var time = (prt[1] ? prt[1] : '');
+  date = date.replace(/\//g, '-');
+  prt = date.split('-');
+  var y = prt[0];
+  var m = util.lpad(prt[1], '0', 2);
+  var d = util.lpad(prt[2], '0', 2);
+  date = y + m + d;
+
+  prt = time.split('.');
+  var ms = '';
+  if (prt[1]) {
+    ms = prt[1];
+    time = prt[0];
+  }
+  prt = time.split(':');
+  var hh = prt[0] | 0;
+  var mi = prt[1] | 0;
+  var ss = prt[2] | 0;
+  hh = util.lpad(hh, '0', 2);
+  mi = util.lpad(mi, '0', 2);
+  ss = util.lpad(ss, '0', 2);
+  time = hh + mi + ss + ms;
+  return util._serializeDateTimeString(date + time);
+};
+util._serializeDateTimeString = function(s) {
+  s = s.replace(/-/g, '');
+  s = s.replace(/\s/g, '');
+  s = s.replace(/:/g, '');
+  s = s.replace(/\./g, '');
+  s = (s + '000000000').substr(0, 17);
+  return s;
 };
 
 /**
@@ -169,34 +226,59 @@ util.now = function() {
 };
 
 /**
+ * 20200920T123456
+ * 20200920T123456+0900
+ * 20200920T123456.789
+ * 20200920T123456.789+0900
+ * 2020-09-20T12:34:56
+ * 2020-09-20T12:34:56+09:00
+ * 2020-09-20T12:34:56.789
+ * 2020-09-20T12:34:56.789+09:00
+ * 2020-09-20 12:34:56
+ * 2020-09-20 12:34:56 +09:00
+ * 2020-09-20 12:34:56.789
+ * 2020-09-20 12:34:56.789 +09:00
+ * 2020/09/20 12:34:56
+ * 2020/09/20 12:34:56.789
+ * 2020/09/20 12:34:56.789 +09:00
+ * -> millis from 19700101T0000Z
+ */
+util.unixmillis = function(s) {
+  return new util.DateTime(s).timestamp;
+};
+
+/**
+ * Returns DateTime object
+ * dt: timestamp / Date object
+ */
+util.getDateTime = function(dt, ofst) {
+  return new util.DateTime(dt, ofst);
+};
+
+/**
  * Returns Date-Time string
  * t: timestamp / Date object
  * fmt: '%Y-%M-%D %H:%m:%S.%s'
  */
 util.getDateTimeString = function(t, fmt) {
-  var d = util.getDateTime(t);
-  return d.toString(fmt);
-};
-util.getDateTimeStringFromSec = function(s, fmt) {
-  var t = util.sec2ms(s);
-  return util.getDateTimeString(t, fmt);
+  return (new util.DateTime(t)).toString(fmt);
 };
 
 /**
  * '12:34:56.987' -> DateTime object
  * offset: -1 -> Yesterday
- *          0 -> Today
+ *          0 -> Today (default)
  *          1 -> Tomorrow
  */
 util.getDateTimeFromTime = function(timeString, offset) {
-  var ts = util.getTimeStampOfDay(timeString, offset);
-  return util.getDateTime(ts);
+  var t = util.getTimeStampOfDay(timeString, offset);
+  return util.getDateTime(t);
 };
 
 /**
- * '12:34:56.987' -> timestamp(milli sec)
+ * '12:34:56.987' -> timestamp (millis from 1970-01-01T00:00:00Z)
  * offset: -1 -> Yesterday
- *          0 -> Today
+ *          0 -> Today (default)
  *          1 -> Tomorrow
  */
 util.getTimeStampOfDay = function(timeString, offset) {
@@ -208,19 +290,17 @@ util.getTimeStampOfDay = function(timeString, offset) {
   var d = util.getDateTime();
   var d1 = new Date(d.yyyy, (d.mm | 0) - 1, d.dd, hh, mi, ss, sss);
   var ts = d1.getTime();
-  if (offset != undefined) {
-    ts += (offset * util.DAY);
-  }
+  if (offset != undefined) ts += (offset * util.DAY);
   return ts;
 };
 
-util.ms2struct = function(ms) {
-  var wk = ms;
-  var sign = false;
-  if (ms < 0) {
-    sign = true;
-    wk *= (-1);
-  }
+/**
+ * millis to struct
+ * -> {'millis': millis, 'days': 1, 'hrs': 0, 'hours': 24, 'minutes': 34, 'seconds': 56, 'milliseconds': 123}
+ */
+util.ms2struct = function(millis) {
+  var wk = millis;
+  if (millis < 0) wk *= (-1);
   var d = (wk / 86400000) | 0;
   var hh = 0;
   if (wk >= 3600000) {
@@ -235,13 +315,13 @@ util.ms2struct = function(ms) {
   var ss = (wk / 1000) | 0;
   var sss = wk - (ss * 1000);
   var tm = {
-    sign: sign,
-    d: d,
-    hr: hh - d * 24,
-    hh: hh,
-    mi: mi,
-    ss: ss,
-    sss: sss
+    millis: millis,
+    days: d,
+    hrs: hh - d * 24,
+    hours: hh,
+    minutes: mi,
+    seconds: ss,
+    milliseconds: sss
   };
   return tm;
 };
@@ -270,24 +350,22 @@ util.ms2sec = function(ms, toString) {
   } else {
     s = ms.substr(0, len - 3) + '.' + ms.substr(len - 3);
   }
-  if (!toString) {
-    s = parseFloat(s);
-  }
+  if (!toString) s = parseFloat(s);
   return s;
 };
 
 /**
  * Returns time zone offset string from minutes
- *  480       -> -0800
- * -540       -> +0900
- * -540, true -> +09:00
+ * -480       -> -0800
+ *  540       -> +0900
+ *  540, true -> +09:00
  */
 util.formatTZ = function(v, e) {
   v |= 0;
-  var s = '-';
-  if (v <= 0) {
-    v *= (-1);
-    s = '+';
+  var s = '+';
+  if (v < 0) {
+    s = '-';
+    v *= -1;
   }
   var h = (v / 60) | 0;
   var m = v - h * 60;
@@ -302,7 +380,7 @@ util.formatTZ = function(v, e) {
  * ext=true: +09:00
  */
 util.getTZ = function(ext) {
-  return util.formatTZ((new Date()).getTimezoneOffset(), ext);
+  return util.formatTZ(new Date().getTimezoneOffset() * (-1), ext);
 };
 
 /**
@@ -316,8 +394,49 @@ util.getTzName = function() {
 };
 
 /**
+ * Returns TZ offset in minutes
+ * +0900 ->  540
+ * -0800 -> -480
+ */
+util.getTzOffset = function() {
+  return new Date().getTimezoneOffset() * -1;
+};
+
+/**
+ * '+0100'  ->  3600000
+ * '+01:00' ->  3600000
+ * '-0100'  -> -3600000
+ * '-01:00' -> -3600000
+ */
+util.tz2ms = function(tz) {
+  if (tz == 'Z') tz = '+0000';
+  return util.clock2ms(tz);
+};
+
+/**
+ * +0900: +0000 -> -32400000
+ */
+util.getTzLocalOffset = function(tz) {
+  if (!tz) return 0;
+  var ms = util.tz2ms(tz);
+  var os = new Date().getTimezoneOffset() * 60000;
+  return os + ms;
+};
+
+/**
+ * t0: YYYY-MM-DD HH:MI:SS.sss
+ * t1: YYYY-MM-DD HH:MI:SS.sss
+ * return t1 - t0 in millis
+ */
+util.difftime = function(t0, t1) {
+  t0 = util.unixmillis(t0);
+  t1 = (t1 == undefined ? util.now() : util.unixmillis(t1));
+  return t1 - t0;
+};
+
+/**
  * baseline, comparisonValue, abs(opt)
- * 1581217200000, 1581066000000 -> -1 (1: abs=true)
+ * 1581217200000, 1581066000000 -> -1 (abs=true: 1)
  * 1581217200000, 1581217200000 ->  0
  * 1581217200000, 1581318000000 ->  1
  */
@@ -331,56 +450,65 @@ util.diffDays = function(ms1, ms2, abs) {
   return Math.floor(d / 86400000) * sign;
 };
 
+/**
+ * Calc Estimated Time to Complete
+ * t0: origin unix millis
+ * val: current value
+ * total: total value
+ */
+util.calcETC = function(t0, val, total, now) {
+  if (now == undefined) now = util.now();
+  var dt = now - t0;
+  var avg = dt / val;
+  var tt = Math.ceil(avg * total);
+  var rt = Math.ceil(avg * (total - val));
+  var r = {
+    completion: now + rt,
+    remaining: rt,
+    total: tt,
+    elapsed: dt,
+    average: Math.ceil(dt / val)
+  };
+  return r;
+};
+
 //-----------------------------------------------------------------------------
 /**
  * Time class
- * t
- *   millis / '12:34:56.789'
+ * t:
+ *   millis or '[+|-]12:34:56.789'
  */
 util.Time = function(t) {
-  if (typeof t == 'string') {
-    // HH:MI:SS.sss
-    var wk = t.split('.');
-    var sss = wk[1] | 0;
-    if (sss) {
-      sss = (sss + '000').substr(0, 3) | 0;
-    }
-    wk = wk[0].split(':');
-    var hh = wk[0] | 0;
-    var mi = wk[1] | 0;
-    var ss = wk[2] | 0;
-    t = (hh * 3600 + mi * 60 + ss) * 1000 + sss;
-  }
-  this.millis = t;
+  if (typeof t == 'string') t = util.clock2ms(t);
   var tm = util.ms2struct(t);
-  this.sign = tm.sign;
-  this.days = tm.d;
-  this.hrs = tm.hr;
-  this.hours = tm.hh;
-  this.minutes = tm.mi;
-  this.seconds = tm.ss;
-  this.milliseconds = tm.sss;
+  this.millis = t;
+  this.days = tm.days;
+  this.hrs = tm.hrs;
+  this.hours = tm.hours;
+  this.minutes = tm.minutes;
+  this.seconds = tm.seconds;
+  this.milliseconds = tm.milliseconds;
 };
 util.Time.prototype = {
   /**
-   * To string the time.
+   * To clock format
    *
    * fmt
-   *  '%Ddays %HH:%mm:%SS.%sss'
-   *  '%Hhr %m\\m %Ss %s'
+   *  'DHMSs'
    */
-  toString: function(fmt) {
-    if (!fmt) fmt = '%HH:%mm:%SS.%sss';
-    var d = this.days;
-    var h = this.hours;
-    var m = this.minutes;
-    var s = this.seconds;
-    var ms = this.milliseconds;
+  toClock: function(fmt) {
+    var ctx = this;
+    if (!fmt) fmt = 'HMSs';
+    var d = ctx.days;
+    var h = ctx.hours;
+    var m = ctx.minutes;
+    var s = ctx.seconds;
+    var ms = ctx.milliseconds;
 
-    if (fmt.match(/%D/)) h = this.hrs;
-    if (!fmt.match(/%H/)) m += h * 60;
-    if (!fmt.match(/%m/)) s += m * 60;
-    if (!fmt.match(/%S/)) ms += s * 1000;
+    if (fmt.match(/D/)) h = ctx.hrs;
+    if (!fmt.match(/H/)) m += h * 60;
+    if (!fmt.match(/M/)) s += m * 60;
+    if (!fmt.match(/S/)) ms += s * 1000;
 
     d += '';
     h += '';
@@ -388,26 +516,315 @@ util.Time.prototype = {
     s += '';
     ms += '';
 
-    var hh = h;
-    if (h < 10) hh = '0' + h;
-    var mm = ('0' + m).slice(-2);
-    var ss = ('0' + s).slice(-2);
-    var sss = ('00' + ms).slice(-3);
+    if (h < 10) h = '0' + h;
+    m = ('0' + m).slice(-2);
+    s = ('0' + s).slice(-2);
+    ms = ('00' + ms).slice(-3);
 
-    var r = fmt;
-    r = r.replace(/%D/, d);
-    r = r.replace(/%HH/, hh);
-    r = r.replace(/%H/, h);
-    r = r.replace(/%mm/, mm);
-    r = r.replace(/%m/, m);
-    r = r.replace(/%SS/, ss);
-    r = r.replace(/%S/, s);
-    r = r.replace(/%sss/, sss);
-    r = r.replace(/%s/, ms);
-
-    // '%Hhr %m\\m %Ss %s\\' -> 12hr 34m 56s 789\
-    r = r.replace(/\\([^\\])/g, '$1');
+    var r = '';
+    if (fmt.match(/D/)) r += d + 'd ';
+    if (fmt.match(/H/)) r += h + ':';
+    if (fmt.match(/M/)) r += m;
+    if (fmt.match(/S/)) r += ':' + s;
+    if (fmt.match(/s/)) r += '.' + ms;
     return r;
+  },
+
+  /**
+   * To string the time.
+   *
+   * 1d 23h 45m 59s
+   * h:
+   *   >= 24h instead of days
+   *   true: 47h 45m 59s
+   * f:
+   *   to display millis
+   *   true: 1d 23h 45m 59s 123
+   */
+  toString: function(h, f) {
+    var ctx = this;
+    var r = (ctx.millis < 0 ? '-' : '');
+    var d = 0;
+    if (!h && (ctx.days > 0)) {
+      d = 1;
+      r += ctx.days + 'd ';
+    }
+    if (h && (ctx.hours > 0)) {
+      d = 1;
+      r += ctx.hours + 'h ';
+    } else if (d || (ctx.hrs > 0)) {
+      d = 1;
+      r += ctx.hrs + 'h ';
+    }
+    if (d || (ctx.minutes > 0)) {
+      d = 1;
+      r += ctx.minutes + 'm ';
+    }
+    if (f) {
+      if (Math.abs(ctx.millis) >= 1000) {
+        if (ctx.milliseconds == 0) {
+          r += ctx.seconds + 's';
+        } else {
+          r += ctx.seconds + 's ' + ctx.milliseconds + 'ms';
+        }
+      } else {
+        r += ctx.milliseconds + 'ms';
+      }
+    } else {
+      r += ctx.seconds + 's';
+    }
+    return r;
+  }
+};
+
+/**
+ * Millis to a string (171959000 -> '1d 23h 45m 59s')
+ *
+ * mode:
+ *   0: auto
+ *   1: s
+ *   2: ms
+ */
+util.ms2str = function(ms, mode, signed) {
+  var t = new util.Time(ms);
+  var r = '';
+  if (mode == 2) {
+    r = t.toString(false, true);
+    if (signed) {
+      if (ms >= 0) r = '+' + r;
+    } else {
+      r = r.replace('-', '');
+    }
+    return r;
+  }
+  if ((mode == 1) || (ms >= 60000)) {
+    r = t.toString(false, false);
+    if (signed) {
+      if (ms >= 0) r = '+' + r;
+    } else {
+      r = r.replace('-', '');
+    }
+    return r;
+  }
+  var ss = t.seconds;
+  var sss = t.milliseconds;
+  if (ms < 1000) {
+    r += sss + 'ms';
+  } else {
+    if (ms < 10000) {
+      sss = sss - sss % 10;
+    } else {
+      sss = sss - sss % 100;
+    }
+    var msec = (sss + '').replace(/0+$/, '');
+    if (sss == 0) {
+      r += ss + 's';
+    } else if (sss < 100) {
+      r += ss + '.0' + msec + 's';
+    } else {
+      r += ss + '.' + msec + 's';
+    }
+  }
+  if (signed) r = ((ms < 0) ? '-' : '+') + r;
+  return r;
+};
+
+//------------------------------------------------
+// Time Counter
+//------------------------------------------------
+util.timecounter = {};
+util.timecounter.id = 0;
+util.timecounter.objs = {};
+/**
+ * Start to display the time delta
+ *
+ * opt = {
+ *  interval: 500,
+ *  mode: 1,
+ *  signed: true,
+ *  cb: null
+ * }
+ */
+util.timecounter.start = function(el, t0, opt) {
+  if (!opt) opt = {};
+  var o = util.timecounter.getObj(el);
+  if (o) {
+    if (t0 !== undefined) o.t0 = t0;
+    if (opt.interval != undefined) o.interval = opt.interval;
+    if (opt.mode !== undefined) o.mode = opt.mode;
+    if (opt.cb !== undefined) o.cb = opt.cb;
+  } else {
+    o = new util.TimeCounter(el, t0, opt);
+    util.timecounter.objs[o.id] = o;
+  }
+  o.start();
+};
+
+/**
+ * Stop to display the time delta
+ */
+util.timecounter.stop = function(el) {
+  var v = 0;
+  var o = util.timecounter.getObj(el);
+  if (o) {
+    v = o.update(o);
+    o.stop();
+    delete util.timecounter.objs[o.id];
+  }
+  return v;
+};
+
+/**
+ * Returns time delta string
+ *
+ * t0: from in millis / Date-Time-String
+ * t1: to in millis / Date-Time-String (default=current time)
+ *
+ * t1:1600000083000 - t0:1600000000000 = 83000 -> '1m 23s'
+ * t1:'2020-09-20 20:01:23' - t0:'2020-09-20 20:00:00' = 83000 -> '1m 23s'
+
+ * signed: false='1m 23s' / true='+1m 23s' | '-1m 23s'
+ */
+util.timecounter.delta = function(t0, t1, mode, signed) {
+  var ms = util.difftime(t0, t1);
+  return util.ms2str(ms, mode, signed);
+};
+
+/**
+ * Returns the time delta value in millis
+ */
+util.timecounter.value = function(el) {
+  var v = 0;
+  var o = util.timecounter.getObj(el);
+  if (o) v = o.update(o);
+  return v;
+};
+
+/**
+ * Returns the time delta string like '1m 23s'
+ */
+util.timecounter.getText = function(el) {
+  var v = 0;
+  var s = '';
+  var o = util.timecounter.getObj(el);
+  if (o) {
+    v = o.update(o);
+    s = util.ms2str(v, o.mode, o.signed);
+  }
+  return s;
+};
+
+util.timecounter.getObj = function(el) {
+  return util.getElRelObj(util.timecounter.objs, el);
+};
+
+util.timecounter.ids = function() {
+  return util.objKeys(util.timecounter.objs);
+};
+
+/**
+ * TimeCounter Class
+ */
+util.TimeCounter = function(el, t0, opt) {
+  if (!opt) opt = {};
+  this.el = el;
+  this.t0 = (t0 == undefined ? util.now() : t0);
+  this.interval = (opt.interval == undefined ? 500 : opt.interval);
+  this.mode = (opt.mode == undefined ? 1 : opt.mode);
+  this.signed = opt.signed;
+  this.cb = opt.cb;
+  this.id = '_timecounter-' + util.timecounter.id++;
+};
+util.TimeCounter.prototype = {
+  start: function(interval) {
+    var ctx = this;
+    if (interval != undefined) ctx.interval = interval;
+    util.IntervalProc.stop(ctx.id);
+    util.IntervalProc.start(ctx.id, ctx.update, ctx.interval, ctx);
+  },
+  update: function(ctx) {
+    var now = new Date().getTime();
+    var v = now - ctx.t0;
+    var el = util.getElement(ctx.el);
+    if (el) el.innerHTML = util.ms2str(v, ctx.mode, ctx.signed);
+    if (ctx.cb) ctx.cb(v);
+    return v;
+  },
+  stop: function() {
+    var ctx = this;
+    util.IntervalProc.stop(ctx.id);
+    util.IntervalProc.remove(ctx.id);
+  }
+};
+
+//------------------------------------------------
+// Clock
+//------------------------------------------------
+util.clock = function(el, opt) {
+  var o = util.clock.getObj(el);
+  if (!o) {
+    o = new util.Clock(el, opt);
+    util.clock.objs[o.id] = o;
+  }
+  o.start(o);
+  return o;
+};
+util.clock.id = 0;
+util.clock.objs = {};
+util.clock.getObj = function(el) {
+  return util.getElRelObj(util.clock.objs, el);
+};
+util.clock.start = function(el) {
+  var o = util.clock.getObj(el);
+  if (o) o.start(o);
+};
+util.clock.stop = function(el) {
+  var o = util.clock.getObj(el);
+  if (o) o.stop(o);
+};
+
+/**
+ * Clock class
+ */
+util.Clock = function(el, opt) {
+  if (typeof opt == 'string') {
+    opt = {fmt: opt};
+  } else if (typeof a1 == 'number') {
+    opt = {offset: opt};
+  }
+  if (!opt) opt = {};
+  if (opt.interval == undefined) opt.interval = 500;
+  if (!opt.fmt) opt.fmt = '%Y-%M-%D %W %H:%m:%S';
+  if (opt.offset == undefined) opt.offset = 0;
+  if (opt.tz == undefined) opt.tz = util.getTZ();
+  this.el = el;
+  this.opt = opt;
+  this.interval = opt.interval;
+  this.offset = opt.offset;
+  this.tz = opt.tz;
+  this.fmt = opt.fmt;
+  this.tmId = 0;
+  this.id = util.clock.id++;
+};
+util.Clock.prototype = {
+  start: function(ctx) {
+    ctx.stop(ctx);
+    ctx.update(ctx);
+  },
+  update: function(ctx) {
+    var el = util.getElement(ctx.el);
+    if (el) {
+      var t = new Date().getTime();
+      t += ctx.offset;
+      el.innerHTML = new util.DateTime(t, ctx.tz).toString(ctx.fmt);
+    }
+    ctx.tmId = setTimeout(ctx.update, ctx.opt.interval, ctx);
+  },
+  stop: function(ctx) {
+    if (ctx.tmId > 0) {
+      clearTimeout(ctx.tmId);
+      ctx.tmId = 0;
+    }
   }
 };
 
@@ -417,11 +834,24 @@ util.Time.prototype = {
 /**
  * ClockTime Class
  */
-util.ClockTime = function(secs, days, integratedSt, clocklikeSt) {
-  this.secs = secs;
+util.ClockTime = function(millis) {
+  var clockMillis = millis;
+  var days = 0;
+  if (clockMillis < 0) {
+    var wk = clockMillis * (-1);
+    days = (wk / util.DAY) | 0;
+    days = days + ((wk % util.DAY == 0) ? 0 : 1);
+    wk = util.DAY - (wk - days * util.DAY);
+    clockMillis = wk * (-1);
+  } else if (clockMillis >= util.DAY) {
+    days = (clockMillis / util.DAY) | 0;
+    clockMillis -= days * util.DAY;
+  }
+  this.millis = millis;
+  this.clockMillis = clockMillis;
   this.days = days;
-  this.integratedSt = integratedSt;
-  this.clocklikeSt = clocklikeSt;
+  this.tm = util.ms2struct(millis);
+  this.clockTm = util.ms2struct(clockMillis); // -00:01=23:59
 };
 util.ClockTime.prototype = {
   // %H:%m            '25:00'
@@ -429,52 +859,44 @@ util.ClockTime.prototype = {
   // %H:%m:%S.%s      '25:00:00.000'
   // %H:%m:%S.%s (%d) '01:00:00.000 (+1 Day)'
   toString: function(fmt) {
-    if (!fmt) fmt = '%H:%m:%S.%s (%d)';
+    if (!fmt) fmt = '%H:%m:%S.%s';
     var byTheDay = fmt.match(/%d/) != null;
-
-    var h = this.toHoursStr(byTheDay);
-    var m = this.toMinutesStr(byTheDay);
-    var s = this.toSecondsStr(byTheDay);
-    var ms = this.toMillisecondsStr(byTheDay);
-
-    if ((this.secs < 0) && !byTheDay) {
-      h = '-' + h;
-    }
-
+    var hr = this.toHrStr(byTheDay);
+    var mi = this.toMinStr(byTheDay);
+    var ss = this.toSecStr(byTheDay);
+    var ms = this.toMilliSecStr(byTheDay);
+    if ((this.millis < 0) && !byTheDay) hr = '-' + hr;
     var r = fmt;
-    r = r.replace(/%H/, h);
-    r = r.replace(/%m/, m);
-    r = r.replace(/%S/, s);
+    r = r.replace(/%H/, hr);
+    r = r.replace(/%m/, mi);
+    r = r.replace(/%S/, ss);
     r = r.replace(/%s/, ms);
-
-    if (byTheDay && (this.days > 0)) {
+    if (byTheDay) {
       var d = this.toDaysStr();
       r = r.replace(/%d/, d);
     }
     return r;
   },
-
   toDaysStr: function() {
     var days;
-    if (this.secs < 0) {
+    if (this.millis < 0) {
       days = '-';
     } else {
       days = '+';
     }
-    days += this.days + ' ' + util.plural('Day', this.days);
+    days += this.days + ' ' + util.plural('Day', this.days, true);
     return days;
   },
-
-  toHoursStr: function(byTheDay) {
+  toHrStr: function(byTheDay) {
     var h;
     var hh;
     if (byTheDay === undefined) {
       byTheDay = false;
     }
     if (byTheDay) {
-      h = this.clocklikeSt['hours'];
+      h = this.clockTm['hrs'];
     } else {
-      h = this.integratedSt['hrs'];
+      h = this.tm['hours'];
     }
     if (h < 10) {
       hh = ('0' + h).slice(-2);
@@ -483,160 +905,89 @@ util.ClockTime.prototype = {
     }
     return hh;
   },
-
-  toMinutesStr: function(byTheDay) {
-    if (byTheDay === undefined) {
-      byTheDay = false;
-    }
-    var st = (byTheDay ? this.clocklikeSt : this.integratedSt);
+  toMinStr: function(byTheDay) {
+    var st = (byTheDay ? this.clockTm : this.tm);
     return ('0' + st['minutes']).slice(-2);
   },
-
-  toSecondsStr: function(byTheDay) {
-    if (byTheDay === undefined) {
-      byTheDay = false;
-    }
-    var st = (byTheDay ? this.clocklikeSt : this.integratedSt);
+  toSecStr: function(byTheDay) {
+    var st = (byTheDay ? this.clockTm : this.tm);
     return ('0' + st['seconds']).slice(-2);
   },
-
-  toMillisecondsStr: function(byTheDay) {
-    if (byTheDay === undefined) {
-      byTheDay = false;
-    }
-    var st = (byTheDay ? this.clocklikeSt : this.integratedSt);
-    return ('00' + ((st['milliseconds'] * 1000) | 0)).slice(-3);
+  toMilliSecStr: function(byTheDay) {
+    var st = (byTheDay ? this.clockTm : this.tm);
+    return ('00' + (st['milliseconds'] | 0)).slice(-3);
   }
 };
 
 /**
  * Add time
  * '12:00' + '01:30' -> '13:30'
- * '12:00' + '13:00' -> '01:00 (+1 Day)' / '25:00'
+ * '12:00' + '13:00' -> '25:00' / '01:00 (+1 Day)'
  * fmt:
- * '10:00:00.000 (+1 Day)'
- *  %H:%m:%S.%s (%d)
+ *  '%H:%m:%S.%s (%d)'
+ *  -> '12:34:56.789 (+1 Day)'
  */
 util.addTime = function(t1, t2, fmt) {
   if (!fmt) fmt = '%H:%m';
-  var s1 = util.time2sec(t1);
-  var s2 = util.time2sec(t2);
-  var t = util._addTime(s1, s2);
-  return t.toString(fmt);
-};
-// Returns ClockTime object
-util._addTime = function(t1, t2) {
-  var totalSecs = t1 + t2;
-  var wkSecs = totalSecs;
-  var days = 0;
-  if (wkSecs >= util.DAY_SEC) {
-    days = (wkSecs / util.DAY_SEC) | 0;
-    wkSecs -= days * util.DAY_SEC;
-  }
-  return util._calcTime(totalSecs, wkSecs, days);
+  var ms1 = util.clock2ms(t1);
+  var ms2 = util.clock2ms(t2);
+  var c = new util.ClockTime(ms1 + ms2);
+  return c.toString(fmt);
 };
 
 /**
  * Sub time
  * '12:00' - '01:30' -> '10:30'
- * '12:00' - '13:00' -> '23:00 (-1 Day)' / '-01:00'
+ * '12:00' - '13:00' -> '-01:00' / '23:00 (-1 Day)'
  * fmt:
- * '10:00:00.000 (-1 Day)'
- *  %H:%m:%S.%s (%d)
+ *  '%H:%m:%S.%s (%d)'
+ *  -> '12:34:56.789 (-1 Day)'
  */
 util.subTime = function(t1, t2, fmt) {
   if (!fmt) fmt = '%H:%m';
-  var s1 = util.time2sec(t1);
-  var s2 = util.time2sec(t2);
-  var t = util._subTime(s1, s2);
-  return t.toString(fmt);
-};
-// Returns ClockTime object
-util._subTime = function(t1, t2) {
-  var totalSecs = t1 - t2;
-  var wkSecs = totalSecs;
-  var days = 0;
-  if (wkSecs < 0) {
-    wkSecs *= -1;
-    days = (wkSecs / util.DAY_SEC) | 0;
-    days = days + ((wkSecs % util.DAY_SEC == 0) ? 0 : 1);
-    if (t1 != 0) {
-      if ((wkSecs % util.DAY_SEC == 0) && (wkSecs != util.DAY_SEC)) {
-        days += 1;
-      }
-    }
-    wkSecs = util.DAY_SEC - (wkSecs - days * util.DAY_SEC);
-  }
-  return util._calcTime(totalSecs, wkSecs, days);
+  var ms1 = util.clock2ms(t1);
+  var ms2 = util.clock2ms(t2);
+  var c = new util.ClockTime(ms1 - ms2);
+  return c.toString(fmt);
 };
 
 /**
  * Multiply time
  * '01:30' * 2 -> '03:00'
- * '12:00' * 3 -> '12:00 (+1 Day)' / '36:00'
+ * '12:00' * 3 -> '36:00' / '12:00 (+1 Day)'
  * fmt:
- * '10:00:00.000 (+1 Day)'
- *  %H:%m:%S.%s (%d)
+ *  '%H:%m:%S.%s (%d)'
+ *  -> '12:34:56.789 (+1 Day)'
  */
 util.multiTime = function(t, v, fmt) {
   if (!fmt) fmt = '%H:%m';
-  var s = util.time2sec(t);
-  var c = util._multiTime(s, v);
+  var ms = util.clock2ms(t);
+  var c = new util.ClockTime(ms * v);
   return c.toString(fmt);
-};
-// Returns ClockTime object
-util._multiTime = function(s, v) {
-  var totalSecs = s * v;
-  var wkSecs = totalSecs;
-  var days = 0;
-  if (wkSecs >= util.DAY_SEC) {
-    days = (wkSecs / util.DAY_SEC) | 0;
-    wkSecs -= days * util.DAY_SEC;
-  }
-  return util._calcTime(totalSecs, wkSecs, days);
 };
 
 /**
  * Divide time
  * '03:00' / 2 -> '01:30'
- * '72:00' / 3 -> '00:00 (+1 Day)' / '24:00'
+ * '72:00' / 3 -> '24:00' / '00:00 (+1 Day)'
  * fmt:
- * '10:00:00.000 (+1 Day)'
- *  %H:%m:%S.%s (%d)
+ *  '%H:%m:%S.%s (%d)'
+ *  -> '12:34:56.789 (+1 Day)'
  */
 util.divTime = function(t, v, fmt) {
   if (!fmt) fmt = '%H:%m';
-  var s = util.time2sec(t);
-  var c = util._divTime(s, v);
+  var ms = util.clock2ms(t);
+  var c = new util.ClockTime(ms / v);
   return c.toString(fmt);
-};
-// Returns ClockTime object
-util._divTime = function(s, v) {
-  var totalSecs = s / v;
-  var wkSecs = totalSecs;
-  var days = 0;
-  if (wkSecs >= util.DAY_SEC) {
-    days = (wkSecs / util.DAY_SEC) | 0;
-    wkSecs -= days * util.DAY_SEC;
-  }
-  return util._calcTime(totalSecs, wkSecs, days);
-};
-
-// Calc time (convert to struct)
-util._calcTime = function(totalSecs, wkSecs, days) {
-  var integratedSt = util.sec2struct(totalSecs);
-  var clocklikeSt = util.sec2struct(wkSecs);
-  var ret = new util.ClockTime(totalSecs, days, integratedSt, clocklikeSt);
-  return ret;
 };
 
 // '09:00', '10:00' -> -1
 // '10:00', '10:00' -> 0
 // '10:00', '09:00' -> 1
 util.timecmp = function(t1, t2) {
-  var s1 = util.time2sec(t1);
-  var s2 = util.time2sec(t2);
-  var d = s1 - s2;
+  var ms1 = util.clock2ms(t1);
+  var ms2 = util.clock2ms(t2);
+  var d = ms1 - ms2;
   if (d == 0) {
     return 0;
   } else if (d < 0) {
@@ -645,102 +996,51 @@ util.timecmp = function(t1, t2) {
   return 1;
 };
 
-// timestr: 'HH:MI:SS.sss'
-// '01:00'        -> 3600.0
-// '01:00:30'     -> 3630.0
-// '01:00:30.123' -> 3630.123
-// '0100'         -> 3600.0
-// '010030'       -> 3630.0
-// '010030.123'   -> 3630.123
-util.time2sec = function(timestr) {
-  var hour = 0;
-  var min = 0;
-  var sec = 0;
-  var msec = 0;
-  var s = '0';
-  var times;
-  var ss;
-  var tm;
+// str: '[+|-]HH:MI:SS.sss'
+// '01:00'         ->    3600000
+// '01:00:30'      ->    3630000
+// '01:00:30.123'  ->    3630123
+// '0100'          ->    3600000
+// '010030'        ->    3630000
+// '010030.123'    ->    3630123
+// '100:30:45.789' ->  361845789
+// '+01:00'        ->    3600000
+// '-01:00'        ->   -3600000
+util.clock2ms = function(str) {
+  var hour;
+  var msec;
+  var wk = str;
+  var sn = false;
+  if (wk.charAt(0) == '+') {
+    wk = wk.substr(1);
+  } else if (wk.charAt(0) == '-') {
+    sn = true;
+    wk = wk.substr(1);
+  }
 
-  if (timestr.match(/:/)) {
-    times = timestr.split(':');
-    if (times.length == 3) {
-      hour = times[0] | 0;
-      min = times[1] | 0;
-      s = times[2];
-    } else if (times.length == 2) {
-      hour = times[0] | 0;
-      min = times[1] | 0;
-    } else {
-      return null;
-    }
-    ss = s.split('.');
-    sec = ss[0] | 0;
-    if (ss.length >= 2) {
-      msec = parseFloat('0.' + ss[1]);
-    }
+  if (wk.match(/\./)) {
+    var prt = wk.split('.');
+    wk = prt[0];
+    msec = (prt[1] + '000').substr(0, 3);
+  }
+
+  var pos = wk.indexOf(':');
+  if (pos != -1) {
+    hour = wk.substr(0, pos);
+    wk = wk.substr(pos + 1).replace(/:/g, '');
   } else {
-    tm = timestr.split('.');
-    times = tm[0];
-    if (tm.length >= 2) {
-      msec = parseFloat('0.' + tm[1]);
-    }
-
-    if (times.length == 6) {
-      hour = times.substr(0, 2) | 0;
-      min = times.substr(2, 2) | 0;
-      sec = times.substr(4, 2) | 0;
-    } else if (times.length == 4) {
-      hour = times.substr(0, 2) | 0;
-      min = times.substr(2, 2) | 0;
-    } else {
-      return null;
-    }
+    hour = wk.substr(0, 2);
+    wk = wk.substr(2);
   }
+  wk = (wk + '00').substr(0, 4);
 
-  var time = (hour * util.HOUR_SEC) + (min * util.MINUTE_SEC) + sec + msec;
-  return time;
-};
-
-util.time2ms = function(t) {
-  return util.time2sec(t) * 1000;
-};
-
-// 86567.123
-// -> {'sign': false, 'days': 1, 'hrs': 24, 'hours': 0, 'minutes': 2, 'seconds': 47, 'milliseconds': 0.123}
-util.sec2struct = function(seconds) {
-  var wk = seconds;
-  var sign = false;
-  if (seconds < 0) {
-    sign = true;
-    wk *= (-1);
-  }
-
-  var days = (wk / util.DAY_SEC) | 0;
-  var hh = 0;
-  if (wk >= util.HOUR_SEC) {
-    hh = (wk / util.HOUR_SEC) | 0;
-    wk -= (hh * util.HOUR_SEC);
-  }
-
-  var mi = 0;
-  if (wk >= util.MINUTE_SEC) {
-    mi = (wk / util.MINUTE_SEC) | 0;
-    wk -= (mi * util.MINUTE_SEC);
-  }
-
-  var ss = wk | 0;
-  var ms = util.round(wk - ss, 3);
-  var tm = {
-    sign: sign,
-    days: days,
-    hrs: hh,
-    hours: hh - days * 24,
-    minutes: mi,
-    seconds: ss,
-    milliseconds: ms
-  };
-  return tm;
+  hour |= 0;
+  var min = wk.substr(0, 2) | 0;
+  var sec = wk.substr(2, 2) | 0;
+  msec |= 0;
+  var ms = (hour * util.HOUR) + (min * util.MINUTE) + sec * 1000 + msec;
+  if (sn) ms *= (-1);
+  return ms;
 };
 
 //-----------------------------------------------------------------------------
@@ -752,10 +1052,7 @@ util.sec2struct = function(seconds) {
 util.calcNextTime = function(times) {
   var now = util.getDateTime();
   times.sort();
-  var ret = {
-    time: null,
-    datetime: null
-  };
+  var ret = {time: null, datetime: null};
   for (var i = 0; i < times.length; i++) {
     var t = times[i];
     t = t.replace(/T/, '').replace(/:/g, '');
@@ -779,24 +1076,35 @@ util.calcNextTime = function(times) {
  * 12345, -1  -> 12350
  * 12345, -2-  > 12300
  */
-util.round = function(number, precision) {
-  precision |= 0;
-  return util._shift(Math.round(util._shift(number, precision, false)), precision, true);
+util.round = function(number, scale) {
+  return util._shift(Math.round(util._shift(number, scale, false)), scale, true);
 };
 
-util._shift = function(number, precision, reverseShift) {
-  if (reverseShift) {
-    precision = -precision;
-  }
+util.floor = function(number, scale) {
+  return util._shift(Math.floor(util._shift(number, scale, false)), scale, true);
+};
+
+util.ceil = function(number, scale) {
+  return util._shift(Math.ceil(util._shift(number, scale, false)), scale, true);
+};
+
+util._shift = function(number, scale, reverseShift) {
+  if (scale == undefined) scale = 0;
+  if (reverseShift) scale = -scale;
   var numArray = ('' + number).split('e');
-  return +(numArray[0] + 'e' + (numArray[1] ? (+numArray[1] + precision) : precision));
+  return +(numArray[0] + 'e' + (numArray[1] ? (+numArray[1] + scale) : scale));
 };
 
 // 123   , 1 -> '123.0'
 // 123.4 , 1 -> '123.4'
 // 123.45, 1 -> '123.5'
-util.decimalAlignment = function(v, scale, zero) {
-  v = util.round(v, scale);
+// type: 0=floor / 1=round / 2=ceil
+// zero: true=0 / false=0.0
+util.decimalAlignment = function(v, scale, type, zero) {
+  var F = [util.floor, util.round, util.ceil];
+  var f = F[type | 0];
+  if (!f) f = F[0];
+  v = f(v, scale);
   if (zero && v == 0) return 0;
   v = util.decimalPadding(v, scale);
   return v;
@@ -813,9 +1121,27 @@ util.decimalPadding = function(v, scale) {
   var w = r.split('.');
   var i = w[0];
   var d = (w[1] == undefined ? '' : w[1]);
-  d = util.strPadding(d, '0', scale, 'R');
+  d = util.rpad(d, '0', scale);
   r = i + '.' + d;
   return r;
+};
+
+/**
+ * true:
+ *  '1'
+ *  '1.0'
+ * false:
+ *  '1.2'
+ *  'a'
+ */
+util.isInteger = function(v, strict) {
+  if (strict && (typeof v != 'number')) return false;
+  v += '';
+  var a = v.split('.');
+  if (isNaN(parseInt(a[0]))) return false;
+  var d = a[1];
+  if (!d) return true;
+  return (parseInt(d) == 0);
 };
 
 /**
@@ -847,12 +1173,12 @@ util.random = function(min, max) {
 };
 
 /**
- * getRandomString(len)
- * getRandomString(tbl)
- * getRandomString(tbl, len)
- * getRandomString(tbl, minLen, maxLen)
+ * randomString(len)
+ * randomString(tbl)
+ * randomString(tbl, len)
+ * randomString(tbl, minLen, maxLen)
  */
-util.getRandomString = function(a1, a2, a3) {
+util.randomString = function(a1, a2, a3) {
   var DFLT_LEN = 8;
   var min = -1;
   var max = -1;
@@ -926,11 +1252,35 @@ util.str2arr = function(s) {
 };
 
 /**
+ * flg: 0 = ALL
+ *      1 = Omit empty lines
+ *      2 = Omit comments (starts with "#")
+ */
+util.text2list = function(s, flg) {
+  s = util.convertNewLine(s, '\n');
+  var a = s.split('\n');
+  var lastIdx = a.length - 1;
+  if (a[lastIdx] == '') a.splice(lastIdx, 1);
+  if (flg) {
+    var w = [];
+    for (var i = 0; i < a.length; i++) {
+      var v = a[i];
+      var t = v.trim();
+      if ((t == '') || ((flg == 2) && (t.match(/^#/)))) continue;
+      w.push(v);
+    }
+    a = w;
+  }
+  return a;
+};
+
+/**
  * startsWith(string, pattern, position)
  * startsWith(string, pattern, case-insensitive)
  * startsWith(string, pattern, position, case-insensitive)
  */
 util.startsWith = function(s, p, a3, a4) {
+  if (s == null) return false;
   var a = [a3, a4];
   var o = 0;
   var i = 0;
@@ -953,6 +1303,7 @@ util.startsWith = function(s, p, a3, a4) {
  * endsWith(string, pattern, length, case-insensitive)
  */
 util.endsWith = function(s, p, a3, a4) {
+  if (s == null) return false;
   var a = [a3, a4];
   var l = 0;
   var i = 0;
@@ -975,17 +1326,37 @@ util.repeatCh = function(c, n) {
   return s;
 };
 
-util.strPadding = function(str, ch, len, pos) {
-  var t = str + '';
-  var d = len - t.length;
-  if (d <= 0) return t;
-  var pd = util.repeatCh(ch, d);
-  if (pos == 'R') {
-    t += pd;
-  } else {
-    t = pd + t;
-  }
-  return t;
+/**
+ * lpad(str, '0', 5)
+ * 'ABC'   -> '00ABC'
+ * 'ABCEF' -> 'ABCEF'
+ * adj:
+ * 'ABCEFG' -> false='ABCEFG' / true='ABCEF'
+ */
+util.lpad = function(str, pad, len, adj) {
+  var r = str + '';
+  var d = len - r.length;
+  if (d <= 0) return r;
+  var pd = util.repeatCh(pad, d);
+  r = pd + r;
+  if (adj) r = r.substr(0, len);
+  return r;
+};
+/**
+ * rpad('str, '0', 5)
+ * 'ABC'   -> 'ABC00'
+ * 'ABCEF' -> 'ABCEF'
+ * adj:
+ * 'ABCEFG' -> false='ABCEFG' / true='ABCEF'
+ */
+util.rpad = function(str, pad, len, adj) {
+  var r = str + '';
+  var d = len - r.length;
+  if (d <= 0) return r;
+  var pd = util.repeatCh(pad, d);
+  r += pd;
+  if (adj) r = r.substr(0, len);
+  return r;
 };
 
 util.null2empty = function(s) {
@@ -1087,24 +1458,20 @@ util.formatHex = function(hex, uc, d, pFix) {
  * -> '-1,234.98765'
  */
 util.formatNumber = function(v) {
-  var v0 = v + '';
-  var v1 = '';
-  if (v0.match(/\./)) {
-    var a = v0.split('.');
-    v0 = a[0];
-    v1 = '.' + a[1];
-  }
-  var len = v0.length;
+  v += '';
+  if (!v.match(/\d+/)) return v;
+  var d = v.replace(/.*?(\d+).*/, '$1');
+  var f = util.separateDigits(d);
+  var re = new RegExp(d);
+  return v.replace(re, f);
+};
+util.separateDigits = function(v) {
+  var len = v.length;
   var r = '';
   for (var i = 0; i < len; i++) {
-    if ((i != 0) && ((len - i) % 3 == 0)) {
-      if (!((i == 1) && (v0.charAt(0) == '-'))) {
-        r += ',';
-      }
-    }
-    r += v0.charAt(i);
+    if ((i != 0) && ((len - i) % 3 == 0)) r += ',';
+    r += v.charAt(i);
   }
-  r += v1;
   return r;
 };
 
@@ -1133,11 +1500,64 @@ util.trimZeros = function(v) {
   return r;
 };
 
-util.plural = function(s, n) {
-  return (n >= 2 ? (s + 's') : s);
+/**
+ * 1 -> '1'
+ * 1024 -> '1K'
+ * 1048576 -> '1M'
+ * sep=true: '1,023K'
+ * sp=true: '1 K'
+ */
+util.convByte = function(v, sep, sp) {
+  var K = 1024;
+  var M = 1048576;
+  var G = 1073741824;
+  var T = 1099511627776;
+  var P = 1125899906842624;
+  var b = v;
+  var u = '';
+  if (v >= P) {
+    b = v / P;
+    u = 'P';
+  } else if (v >= T) {
+    b = v / T;
+    u = 'T';
+  } else if (v >= G) {
+    b = v / G;
+    u = 'G';
+  } else if (v >= M) {
+    b = v / M;
+    u = 'M';
+  } else if (v >= K) {
+    b = v / K;
+    u = 'K';
+  }
+  var r = util.floor(b, 1);
+  if (sep) r = util.formatNumber(r);
+  if (sp && u) r += ' ';
+  r += u;
+  return r;
 };
 
-util.copy2clpbd = function(s) {
+util.plural = function(s, n, f) {
+  if (n == 1) return s;
+  if (f) return s + 's';
+  if (s.match(/s$/i) || s.match(/ch$/i) || s.match(/sh$/i) || s.match(/x$/i) || s.match(/o$/i)) return s + 'es';
+  if (s.match(/y$/)) return s.replace(/y$/, 'ies');
+  if (s.match(/Y$/)) return s.replace(/Y$/, 'IES');
+  if (s.match(/f$/)) return s.replace(/f$/, 'ves');
+  if (s.match(/F$/)) return s.replace(/F$/, 'VES');
+  if (s.match(/fe$/)) return s.replace(/fe$/, 'ves');
+  if (s.match(/FE$/)) return s.replace(/FE$/, 'VES');
+  return s + 's';
+};
+
+util.haveBeen = function(subject, pred, n) {
+  if (n == null) return 'The ' + subject + ' has been ' + pred + '.';
+  var s = util.plural(subject, n) + ' ' + (n == 1 ? 'has' : 'have') + ' been ' + pred + '.';
+  return (n == 0 ? 'No' : n) + ' ' + s;
+};
+
+util.copy = function(s) {
   var b = document.body;
   var ta = document.createElement('textarea');
   ta.style.position = 'fixed';
@@ -1167,20 +1587,18 @@ util.xlsCol = function(c) {
   return f(c);
 };
 util.xlsColA2N = function(c) {
-  var t = util.A2Z;
-  return util.strpIndex(t, c.trim().toUpperCase());
+  return util.strpIndex(util.A2Z, c.trim().toUpperCase());
 };
 util.xlsColN2A = function(n) {
-  var t = util.A2Z;
-  var a = util.strp(t, n);
+  var a = util.strp(util.A2Z, n);
   if (n <= 0) a = '';
   return a;
 };
 
 /**
  * String permutation.
- * strp('ABC', 1)  -> 'A'
- * strp('ABC', 2)  -> 'B'
+ * strp('ABC', 1) -> 'A'
+ * strp('ABC', 2) -> 'B'
  * strp('ABC', 4) -> 'AA'
  */
 util.strp = function(tbl, idx) {
@@ -1310,9 +1728,7 @@ util.arr.countByValue = function(arr) {
  */
 util.arr.del = function(arr, v) {
   for (var i = 0; i < arr.length; i++) {
-    if (arr[i] == v) {
-      arr.splice(i--, 1);
-    }
+    if (arr[i] == v) arr.splice(i--, 1);
   }
 };
 
@@ -1366,13 +1782,9 @@ util.arr.toUniqueValues = function(arr, srt) {
     v.push({key: k, cnt: o[k]});
   }
   if (srt == 'asc|count') {
-    v.sort(function(a, b) {
-      return a.cnt - b.cnt;
-    });
+    v.sort(function(a, b) {return a.cnt - b.cnt;});
   } else if (srt == 'desc|count') {
-    v.sort(function(a, b) {
-      return b.cnt - a.cnt;
-    });
+    v.sort(function(a, b) {return b.cnt - a.cnt;});
   }
   var r = [];
   for (var i = 0; i < v.length; i++) {
@@ -1387,12 +1799,12 @@ util.arr.toUniqueValues = function(arr, srt) {
 };
 
 //-----------------------------------------------------------------------------
-util.addListener = function(listeners, fn) {
-  if (listeners && !util.arr.hasValue(listeners, fn)) listeners.push(fn);
+util.addListItem = function(list, item) {
+  if (list && !util.arr.hasValue(list, item)) list.push(item);
 };
 
-util.removeListener = function(listeners, fn) {
-  if (listeners) util.arr.del(listeners, fn);
+util.removeListItem = function(list, item) {
+  if (list) util.arr.del(list, item);
 };
 
 //-----------------------------------------------------------------------------
@@ -1424,7 +1836,7 @@ util.removeListener = function(listeners, fn) {
  */
 util.http = function(req) {
   var trc = util.http.trace;
-  var trcid = util.getRandomString(util.http.trcIdChars, util.http.trcIdLen);
+  var trcid = util.randomString(util.http.TRC_ID_CHARS, util.http.TRC_ID_LEN);
   req.trcid = trcid;
   if (util.http.conn == 0) {
     util.http.onStart();
@@ -1455,7 +1867,7 @@ util.http = function(req) {
   }
   var url = req.url;
   if (data && (req.method == 'GET')) {
-    url += '?' + data;
+    url += (url.match(/\?/) ? '&' : '?') + data;
     data = null;
   }
   if (req.async == undefined) req.async = true;
@@ -1481,35 +1893,54 @@ util.http = function(req) {
     xhr.withCredentials = true;
   }
   if (util.http.logging) {
-    var m = '[' + trcid + '] => ' + req.url;
+    var m = '[' + trcid + '] => ' + req.method + ' ' + util.escHtml(url);
     if (data) m += ' : ' + data.substr(0, util.http.MAX_LOG_LEN);
     util._log.v(m);
   }
-  xhr.send(data);
+  if (util.debug) $dbg[trcid] = {req: req};
+  if (util.http.online) xhr.send(data);
   util.http.onSent(req);
+  if (!util.http.online) {
+    var o = {xhr: xhr, req: req};
+    setTimeout(util.http.pseudoDone, 0, o);
+  }
 };
 util.http.onDone = function(xhr, req) {
   var res = xhr.responseText;
+  var st = xhr.status;
+  if (util.debug) $dbg[req.trcid].res = res;
   if (util.http.logging) {
     var m = res;
-    if (m) {
-      if (m.length > util.http.LOG_LIMIT) {
-        m = '[size=' + m.length + ']';
-      } else if (m.length > util.http.MAX_LOG_LEN) {
-        m = m.substr(0, util.http.MAX_LOG_LEN) + '... (size=' + m.length + ')';
+    if (st == 0) {
+      m = 'ERROR =>X';
+    } else {
+      if (m) {
+        if (m.length > util.http.LOG_LIMIT) {
+          m = '[size=' + m.length + ']';
+        } else if (m.length > util.http.MAX_LOG_LEN) {
+          m = m.substr(0, util.http.MAX_LOG_LEN) + '... (size=' + m.length + ')';
+        }
       }
+      m = '<= [' + st + '] ' + util.escHtml(m);
     }
-    m = util.escHTML(m);
-    util._log.v('[' + req.trcid + '] <= ' + m);
+    util._log.v('[' + req.trcid + '] ' + m);
   }
   if (util.http.onReceive(xhr, res, req)) {
-    if (xhr.status == 200) {
+    if (st == 200) {
       if (util.http.isJSONable(xhr, req)) {
-        res = util.fromJSON(res);
+        try {
+          res = util.fromJSON(res);
+        } catch (e) {
+          if (util.http.logging) {
+            util._log.e('[' + req.trcid + '] JSON PARSE ERROR');
+          }
+          res = null;
+        }
+        if (util.debug) $dbg[req.trcid].res = res;
       }
     }
     if (req.cb) req.cb(xhr, res, req);
-    if (((xhr.status >= 200) && (xhr.status < 300)) || (xhr.status == 304)) {
+    if (((st >= 200) && (st < 300)) || (st == 304)) {
       if (req.onsuccess) req.onsuccess(xhr, res, req);
     } else {
       util.http.onError(xhr, res, req);
@@ -1521,13 +1952,15 @@ util.http.onDone = function(xhr, req) {
     util.http.onStop();
   }
 };
+util.http.pseudoDone = function(o) {
+  o.xhr.status = 0;
+  util.http.onDone(o.xhr, o.req);
+};
 util.http.buildQueryString = function(p) {
   var s = '';
   var cnt = 0;
   for (var k in p) {
-    if (cnt > 0) {
-      s += '&';
-    }
+    if (cnt > 0) s += '&';
     s += k + '=' + encodeURIComponent(p[k]);
     cnt++;
   }
@@ -1543,10 +1976,17 @@ util.http.isJSONable = function(xhr, req) {
 };
 
 /**
- * addListener('start|send|receive|stop|error', fn);
+ * addListener('start|send|sent|receive|stop|error', fn);
+ *  callback args:
+ *   start: ()
+ *   send: (req)
+ *   sent: (req)
+ *   receive: (xhr, res, req)
+ *   stop: ()
+ *   error: (xhr, res, req)
  */
 util.http.addListener = function(type, fn) {
-  util.addListener(util.http.listeners[type], fn);
+  util.addListItem(util.http.listeners[type], fn);
 };
 util.http.onStart = function() {
   util.http.callListeners('start');
@@ -1577,19 +2017,14 @@ util.http.callListeners = function(type, a1, a2, a3) {
 util.http.countConnections = function() {
   return util.http.conn;
 };
-util.http.setTraceIdChars = function(c) {
-  util.http.trcIdChars = c;
-};
-util.http.setTraceIdLen = function(n) {
-  util.http.trcIdLen = n;
-};
+util.http.TRC_ID_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+util.http.TRC_ID_LEN = 4;
 util.http.LOG_LIMIT = 3145728;
 util.http.MAX_LOG_LEN = 4096;
-util.http.logging = false;
+util.http.online = true;
+util.http.logging = window.dbg ? true : false;
 util.http.trace = false;
 util.http.conn = 0;
-util.http.trcIdChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-util.http.trcIdLen = 4;
 util.http.listeners = {
   start: [],
   send: [],
@@ -1606,7 +2041,12 @@ var $el = function(target, idx) {
   var el = util.getElement(target, idx);
   if (el) {
     for (var k in $el.fn) {
-      if (!el[k]) el[k] = $el.fn[k];
+      if (el[k] == undefined) el[k] = $el.fn[k];
+    }
+  } else {
+    el = {notFound: true, style: {}};
+    for (k in $el.fn) {
+      el[k] = util.nop;
     }
   }
   return el;
@@ -1619,9 +2059,27 @@ $el.fn = {
   },
   text: function(text, speed) {
     if (text == undefined) return this.innerText;
-    var html = util.escHTML(text);
+    var html = util.escHtml(text);
     if (speed == undefined) speed = 0;
     util.writeHTML(this, html, speed);
+  },
+  clear: function(speed) { // Not available for <pre> on IE11
+    var el = this;
+    if (util.isTextInput(el)) {
+      el.value = '';
+    } else {
+      if (speed == undefined) speed = 0;
+      util.clearHTML(el, speed);
+    }
+  },
+  textseq: function(text, opt) {
+    return util.textseq(this, text, opt);
+  },
+  startTextSeq: function() {
+    util.textseq.start(this);
+  },
+  stopTextSeq: function() {
+    util.textseq.stop(this);
   },
   setStyle: function(n, v) {
     util.setStyle(this, n, v);
@@ -1647,11 +2105,15 @@ $el.fn = {
   position: function(x, y) {
     util.setPosition(this, x, y);
   },
-  blink: function() {
-    util.addClass(this, 'blink');
+  blink: function(a) {
+    if (a == undefined) a = true;
+    var f = a ? util.addClass : util.removeClass;
+    f(this, 'blink');
   },
-  stopBlink: function() {
-    util.removeClass(this, 'blink');
+  blink2: function(a) {
+    if (a == undefined) a = true;
+    var f = a ? util.addClass : util.removeClass;
+    f(this, 'blink2');
   },
   hide: function() {
     var el = this;
@@ -1673,6 +2135,12 @@ $el.fn = {
   },
   getRect: function() {
     return this.getBoundingClientRect();
+  },
+  prev: function() {
+    return util.prevElement(this);
+  },
+  next: function() {
+    return util.nextElement(this);
   }
 };
 
@@ -1687,7 +2155,7 @@ util.getElement = function(target, idx) {
 };
 
 util.addClass = function(el, n) {
-  el = $el(el);
+  el = util.getElement(el);
   if (util.hasClass(el, n)) return;
   if (el.className == '') {
     el.className = n;
@@ -1697,7 +2165,7 @@ util.addClass = function(el, n) {
 };
 
 util.removeClass = function(el, n) {
-  el = $el(el);
+  el = util.getElement(el);
   var names = el.className.split(' ');
   var nm = '';
   for (var i = 0; i < names.length; i++) {
@@ -1710,7 +2178,7 @@ util.removeClass = function(el, n) {
 };
 
 util.hasClass = function(el, n) {
-  el = $el(el);
+  el = util.getElement(el);
   var names = el.className.split(' ');
   for (var i = 0; i < names.length; i++) {
     if (names[i] == n) return true;
@@ -1719,29 +2187,59 @@ util.hasClass = function(el, n) {
 };
 
 util.isActiveElement = function(el, idx) {
-  return $el(el, idx) == document.activeElement;
+  return util.getElement(el, idx) == document.activeElement;
 };
 
 util.hasParent = function(el, parent) {
-  el = $el(el);
-  parent = $el(parent);
+  el = util.getElement(el);
+  parent = util.getElement(parent);
   if (!el || !parent) return false;
   do {
     if (parent.toString() == '[object NodeList]') {
       for (var i = 0; i < parent.length; i++) {
         var p = parent[i];
-        if (el == p) {
-          return true;
-        }
+        if (el == p) return true;
       }
     } else {
-      if (el == parent) {
-        return true;
-      }
+      if (el == parent) return true;
     }
     el = el.parentNode;
-  } while (el != null);
+  } while (el);
   return false;
+};
+
+util.prevElement = function(node) {
+  var el = node.previousElementSibling;
+  if (el) {
+    if (el.childElementCount > 0) {
+      var lastChild = el.lastElementChild;
+      while (lastChild.childElementCount > 0) {
+        lastChild = lastChild.lastElementChild;
+      }
+      el = lastChild;
+    }
+  } else {
+    el = node.parentNode;
+  }
+  return el;
+};
+
+util.nextElement = function(node) {
+  var el = node.firstElementChild;
+  if (!el) {
+    el = node.nextElementSibling;
+    if (el == null) {
+      var parent = node.parentNode;
+      if (parent) {
+        do {
+          el = parent.nextElementSibling;
+          if (el) break;
+          parent = parent.parentNode;
+        } while (parent);
+      }
+    }
+  }
+  return el;
 };
 
 util.center = function(el) {
@@ -1753,21 +2251,32 @@ util.center = function(el) {
   var h = rect.height;
   var x = cliW / 2 - w / 2;
   var y = cliH / 2 - h / 2;
-  if (x < 0) {
-    x = 0;
-  }
-  if (y < 0) {
-    y = 0;
-  }
+  if (x < 0) x = 0;
+  if (y < 0) y = 0;
   util.setPosition(el, x, y);
 };
 
 util.setPosition = function(el, x, y) {
-  var style = {
-    left: x + 'px',
-    top: y + 'px'
-  };
+  var style = {left: x + 'px', top: y + 'px'};
   util.setStyles(el, style);
+};
+
+util.isTextInput = function(el) {
+  if (el.tagName == 'TEXTAREA') return true;
+  if (el.tagName == 'INPUT') {
+    if ((el.type == 'text') || (el.type == 'password')) return true;
+  }
+  return false;
+};
+
+util.addSelectOption = function(select, label, val, selected) {
+  select = util.getElement(select);
+  var opt = document.createElement('option');
+  opt.value = val;
+  opt.innerText = label;
+  if (selected) opt.selected = true;
+  select.appendChild(opt);
+  return opt;
 };
 
 util.getClientWidth = function() {
@@ -1782,8 +2291,226 @@ util.getZoomRatio = function() {
   return Math.round(window.devicePixelRatio * 100);
 };
 
-util.escHTML = function(s) {
+util.escHtml = function(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+};
+
+util.html2text = function(s) {
+  if (!s) return '';
+  var p = document.createElement('pre');
+  p.innerHTML = s;
+  return p.innerText;
+};
+
+// f = function() {/*
+// ABC
+// 123
+// */};
+//
+// -> fn2text(f) = 'ABC\n123'
+// s, e: start/end offset
+//
+util.fn2text = function(f, s, e) {
+  var b = f.toString().replace(/\r\n/g, '\n');
+  var a = b.split('\n');
+  var t = '';
+  if ((s == undefined) || (s < 0)) s = 1;
+  if ((e == undefined) || (e < 0)) e = 1;
+  for (var i = s; i < a.length - e; i++) {
+    t += a[i] + '\n';
+  }
+  return t;
+};
+
+/**
+ * R, G, B -> #RGB
+ */
+util.rgb = function(r, g, b) {
+  var rgb = util.color.rgb10to16(r, g, b);
+  return '#' + rgb.r + rgb.g + rgb.b;
+};
+
+/**
+ * http://xxx/ -> <a href="http://xxx/">http://xxx/</a>
+ */
+util.linkUrls = function(s, attr) {
+  if (attr == undefined) attr = 'target="_blank" rel="noopener"';
+  var t = '<a href="$1"';
+  if (attr) t += ' ' + attr;
+  t += '>$1</a>';
+  return s.replace(/(https?:\/\/[!#$&'()*+,/:;=?@[\]0-9A-Za-z\-._~]+)/g, t);
+};
+
+/**
+ * R, G, B -> {h, s, v}
+ * r: R or #RGB
+ */
+util.rgb2hsv = function(r, g, b) {
+  if (typeof r == 'string') {
+    var rgb = util.color.rgb16to10(r);
+    r = rgb.r;
+    g = rgb.g;
+    b = rgb.b;
+  }
+  var hsv = {
+    h: util.color.getH(r, g, b),
+    s: util.color.getS(r, g, b),
+    v: util.color.getV(r, g, b)
+  };
+  return hsv;
+};
+
+/**
+ * H, S, V -> {r, g, b}
+ */
+util.hsv2rgb = function(h, s, v) {
+  var r, g, b;
+  var max = v;
+  var min = max - ((s / 255) * max);
+  if ((h >= 0) && (h < 60)) {
+    r = max;
+    g = (h / 60) * (max - min) + min;
+    b = min;
+  } else if ((h >= 60) && (h < 120)) {
+    r = ((120 - h) / 60) * (max - min) + min;
+    g = max;
+    b = min;
+  } else if ((h >= 120) && (h < 180)) {
+    r = min;
+    g = max;
+    b = ((h - 120) / 60) * (max - min) + min;
+  } else if ((h >= 180) && (h < 240)) {
+    r = min;
+    g = ((240 - h) / 60) * (max - min) + min;
+    b = max;
+  } else if ((h >= 240) && (h < 300)) {
+    r = ((h - 240) / 60) * (max - min) + min;
+    g = min;
+    b = max;
+  } else {
+    r = max;
+    g = min;
+    b = ((360 - h) / 60) * (max - min) + min;
+  }
+  var rgb = {
+    r: Math.round(r),
+    g: Math.round(g),
+    b: Math.round(b)
+  };
+  return rgb;
+};
+
+/**
+ * rgb16: #rgb
+ * brightness: -100-0-100
+ * hue: -100-0-100
+ */
+util.color = function(rgb16, brightness, hue) {
+  hue |= 0;
+  var hsv = util.rgb2hsv(rgb16);
+  var h = hsv.h + ((hue / 100) * 255);
+  var s = hsv.s;
+  var v = hsv.v;
+  if (brightness > 0) {
+    s = s + (((brightness * -1) / 100) * 255);
+  } else {
+    v = v + ((brightness / 100) * 255);
+  }
+  if (h < 0) {
+    h += 360;
+  } else if (h >= 360) {
+    h -= 360;
+  }
+  if (s < 0) {
+    s = 0;
+  } else if (s > 255) {
+    s = 255;
+  }
+  if (v < 0) {
+    v = 0;
+  } else if (v > 255) {
+    v = 255;
+  }
+  var rgb = util.hsv2rgb(h, s, v);
+  return util.rgb(rgb.r, rgb.g, rgb.b);
+};
+
+util.color.rgb10to16 = function(r, g, b) {
+  var r16 = ('0' + parseInt(r).toString(16)).slice(-2);
+  var g16 = ('0' + parseInt(g).toString(16)).slice(-2);
+  var b16 = ('0' + parseInt(b).toString(16)).slice(-2);
+  var r0 = r16.charAt(0);
+  var r1 = r16.charAt(1);
+  var g0 = g16.charAt(0);
+  var g1 = g16.charAt(1);
+  var b0 = b16.charAt(0);
+  var b1 = b16.charAt(1);
+  if ((r0 == r1) && (g0 == g1) && (b0 == b1)) {
+    r16 = r0;
+    g16 = g0;
+    b16 = b0;
+  }
+  var rgb = {r: r16, g: g16, b: b16};
+  return rgb;
+};
+
+util.color.rgb16to10 = function(rgb16) {
+  var r16, g16, b16, r10, g10, b10;
+  rgb16 = rgb16.replace(/#/, '').replace(/\s/g, '');
+  if (rgb16.length == 6) {
+    r16 = rgb16.substr(0, 2);
+    g16 = rgb16.substr(2, 2);
+    b16 = rgb16.substr(4, 2);
+  } else if (rgb16.length == 3) {
+    r16 = rgb16.substr(0, 1);
+    g16 = rgb16.substr(1, 1);
+    b16 = rgb16.substr(2, 1);
+    r16 += r16;
+    g16 += g16;
+    b16 += b16;
+  }
+  r10 = parseInt(r16, 16);
+  g10 = parseInt(g16, 16);
+  b10 = parseInt(b16, 16);
+  var rgb = {r: r10, g: g10, b: b10};
+  return rgb;
+};
+
+// Hue 0-360
+util.color.getH = function(r, g, b) {
+  if ((r == g) && (g == b)) return 0;
+  var a = util.color.sortRGB(r, g, b);
+  var min = a[0];
+  var max = a[2];
+  var h;
+  if (max == r) {
+    h = 60 * ((g - b) / (max - min));
+  } else if (max == g) {
+    h = 60 * ((b - r) / (max - min)) + 120;
+  } else {
+    h = 60 * ((r - g) / (max - min)) + 240;
+  }
+  if (h < 0) h += 360;
+  return Math.round(h);
+};
+
+// Saturation/Chroma 0-255
+util.color.getS = function(r, g, b) {
+  var a = util.color.sortRGB(r, g, b);
+  var min = a[0];
+  var max = a[2];
+  var s = (max - min) / max;
+  return Math.round(s * 255);
+};
+
+// Value/Brightness 0-255
+util.color.getV = function(r, g, b) {
+  return util.color.sortRGB(r, g, b)[2];
+};
+
+util.color.sortRGB = function(r, g, b) {
+  var a = [r, g, b];
+  return a.sort(function(_a, _b) {return _a - _b});
 };
 
 //-----------------------------------------------------------------------------
@@ -1792,9 +2519,9 @@ util.textarea = {};
  * addStatusInfo('#textarea-id', '#infoarea-id')
  */
 util.textarea.addStatusInfo = function(textarea, infoarea) {
-  textarea = $el(textarea);
+  textarea = util.getElement(textarea);
   if (!textarea) return;
-  infoarea = $el(infoarea);
+  infoarea = util.getElement(infoarea);
   if (!infoarea) return;
   textarea.infoarea = infoarea;
   util.textarea._adqdLIstener(textarea);
@@ -1803,7 +2530,7 @@ util.textarea.addStatusInfo = function(textarea, infoarea) {
  * updateTextAreaInfo('#textarea-id')
  */
 util.updateTextAreaInfo = function(textarea) {
-  textarea = $el(textarea);
+  textarea = util.getElement(textarea);
   if (!textarea) return;
   var txt = textarea.value;
   var len = txt.length;
@@ -1847,7 +2574,7 @@ util.textarea.onInput = function(e) {
   util.updateTextAreaInfo(e.target);
 };
 util.textarea.addListener = function(target, f) {
-  var el = $el(target);
+  var el = util.getElement(target);
   if (el) {
     el.listener = f;
     util.textarea._adqdLIstener(el);
@@ -1868,9 +2595,7 @@ util.textarea.addListener = function(target, f) {
  */
 util.writeHTML = function(target, html, speed) {
   var el = target;
-  if (typeof target == 'string') {
-    el = document.querySelector(target);
-  }
+  if (typeof target == 'string') el = document.querySelector(target);
   if (!el) return;
   if (speed == 0) {
     el.innerHTML = html;
@@ -1887,9 +2612,7 @@ util.writeHTML = function(target, html, speed) {
 util._writeHTML = function(target, cbData) {
   var DFLT_SPEED = 250;
   var speed = cbData.speed;
-  if ((speed == undefined) || (speed < 0)) {
-    speed = DFLT_SPEED;
-  }
+  if ((speed == undefined) || (speed < 0)) speed = DFLT_SPEED;
   target.innerHTML = cbData.html;
   setTimeout(util.__writeHTML, 10, target, speed);
 };
@@ -1902,9 +2625,7 @@ util.__writeHTML = function(target, speed) {
  */
 util.clearHTML = function(target, speed) {
   var DFLT_SPEED = 200;
-  if ((speed == undefined) || (speed < 0)) {
-    speed = DFLT_SPEED;
-  }
+  if ((speed == undefined) || (speed < 0)) speed = DFLT_SPEED;
   util.fadeOut(target, speed, util._clearHTML);
 };
 util._clearHTML = function(el) {
@@ -1913,20 +2634,318 @@ util._clearHTML = function(el) {
 };
 
 //-----------------------------------------------------------------------------
+// Text Sequencer
+//-----------------------------------------------------------------------------
+/**
+ * opt = {
+ *  speed: 20,
+ *  step: 1,
+ *  start: 0,
+ *  len: -1,
+ *  reverse: false,
+ *  cursor: {
+ *   speed: 100,
+ *   n: 3
+ *  },
+ *  onprogress: <callback-function(ctx, chunk)>,
+ *  oncomplete: <callback-function(ctx)>
+ * };
+ * var ctx = util.textseq(el, text, opt);
+ */
+util.textseq = function(el, text, opt) {
+  var ctx = util.textseq.getCtx(el);
+  if (ctx) util.textseq._stop(ctx);
+  ctx = util.textseq.createCtx(el, text, opt);
+  var i = util.textseq.idx(el);
+  if (i < 0) {
+    util.textseq.ctxs.push(ctx);
+  } else {
+    util.textseq.ctxs[i] = ctx;
+  }
+  var f = (ctx.cursor.speed ? util.textseq.blinkCursor : (ctx.reverse ? util.textseq._reverse : util.textseq._textseq));
+  ctx.tmrId = setTimeout(f, 0, ctx);
+  return ctx;
+};
+util.textseq._textseq = function(ctx) {
+  var speed = util.textseq.getSpeed(ctx);
+  var step = ctx.step;
+  ctx.tmrId = 0;
+  var text = util.textseq.getText(ctx);
+  util.textseq.print(ctx, text);
+  util.textseq.onprogress(ctx, ctx.pos, ctx.prevPos, ctx.cutLen);
+  if (ctx.pos < ctx.text.length) {
+    speed = util.textseq.getSpeed(ctx);
+    ctx.tmrId = setTimeout(util.textseq._textseq, speed, ctx);
+  } else {
+    util.textseq.print(ctx, ctx.orgTxt);
+    util.textseq.oncomplete(ctx);
+  }
+  if ((speed == 0) || (step == 0)) {
+    ctx.pos = ctx.text.length;
+    ctx.cutLen = ctx.pos;
+  } else {
+    ctx.prevPos = ctx.pos;
+    ctx.pos += step;
+    ctx.cutLen = step;
+    if (ctx.pos > ctx.end) ctx.pos = ctx.text.length;
+  }
+};
+util.textseq._reverse = function(ctx) {
+  var speed = util.textseq.getSpeed(ctx);
+  var step = ctx.step;
+  ctx.tmrId = 0;
+  var text = util.textseq.getText(ctx);
+  util.textseq.print(ctx, text);
+  util.textseq.onprogress(ctx, ctx.pos, ctx.prevPos, ctx.cutLen);
+  if (ctx.pos == ctx.end) {
+    util.textseq.oncomplete(ctx);
+  } else if (ctx.pos >= 0) {
+    speed = util.textseq.getSpeed(ctx);
+    ctx.tmrId = setTimeout(util.textseq._reverse, speed, ctx);
+  } else {
+    util.textseq.print(ctx, '');
+    util.textseq.oncomplete(ctx);
+  }
+  if ((speed == 0) || (step == 0)) {
+    ctx.pos = -1;
+    ctx.cutLen = ctx.text.length;
+  } else {
+    ctx.prevPos = ctx.pos;
+    ctx.pos -= step;
+    if (ctx.pos < ctx.end) ctx.pos = ctx.end;
+  }
+};
+util.textseq.getText = function(ctx) {
+  var len = ctx.pos;
+  if (ctx.reverse) len++;
+  return ctx.text.substr(0, len);
+};
+util.textseq.start = function(el) {
+  var ctx = util.textseq.getCtx(el);
+  if (!ctx) return;
+  util.textseq._stop(ctx);
+  var f = ctx.reverse ? util.textseq._reverse : util.textseq._textseq;
+  f(ctx);
+};
+util.textseq.stop = function(el) {
+  var i = util.textseq.idx(el);
+  if (i < 0) return;
+  var ctx = util.textseq.ctxs[i];
+  util.textseq._stop(ctx);
+};
+util.textseq._stop = function(ctx) {
+  if (ctx.tmrId > 0) {
+    clearTimeout(ctx.tmrId);
+    ctx.tmrId = 0;
+  }
+};
+util.textseq.onprogress = function(ctx, pos, prevPos, cutLen) {
+  if (!ctx.onprogress) return;
+  var st;
+  if (ctx.reverse) {
+    if (prevPos < 0) return;
+    st = prevPos - cutLen + 1;
+    if (st < 0) {
+      cutLen = cutLen + st;
+      st = 0;
+    }
+  } else {
+    if (prevPos == pos) return;
+    st = prevPos;
+    if (st < 0) return;
+  }
+  var chunk = ctx.text.substr(st, cutLen);
+  ctx.onprogress(ctx, chunk);
+};
+util.textseq.oncomplete = function(ctx) {
+  var i = util.textseq.idx(ctx.el);
+  util.textseq.ctxs.splice(i, 1);
+  if (ctx.oncomplete) ctx.oncomplete(ctx);
+};
+util.textseq.createCtx = function(el, text, opt) {
+  if (!opt) opt = {};
+  var isInp = util.isTextInput(el);
+  var orgTxt = text;
+  if (!isInp) text = util.html2text(text);
+  var txtLen = text.length;
+  var len = (((opt.len == undefined) || (opt.len < 0)) ? -1 : opt.len);
+  var step = (opt.step == undefined ? 1 : opt.step);
+  if (opt.start == undefined) opt.start = 0;
+  var cutLen = step;
+  if (opt.reverse) {
+    if (opt.start == 0) {
+      var start = txtLen - 1;
+    } else {
+      start = opt.start - 1;
+    }
+    var end = -1;
+    if (len > 0) end = start - len;
+    if (end < 0) end = -1;
+    var prevPos = start + cutLen;
+    if (prevPos >= txtLen) prevPos = txtLen - 1;
+    var pos = start;
+    if (pos < 0) pos = txtLen - 1;
+  } else {
+    if (opt.start == 0) {
+      start = 0;
+    } else {
+      start = opt.start;
+    }
+    end = txtLen;
+    if (len > 0) end = start + len;
+    prevPos = start;
+    if (prevPos < 0) prevPos = 0;
+    pos = start;
+    if (pos < 0) pos = 0;
+  }
+  var cursor = {};
+  if (opt.cursor != undefined) {
+    cursor = {speed: 100, n: 3};
+    if (typeof opt.cursor == 'number') {
+      cursor.speed = opt.cursor;
+    } else {
+      if (opt.cursor.speed != undefined) cursor.speed = opt.cursor.speed;
+      if (opt.cursor.n != undefined) cursor.n = opt.cursor.n;
+    }
+  }
+  var ctx = {
+    el: el,
+    orgTxt: orgTxt,
+    text: text,
+    speed: (opt.speed == undefined ? util.textseq.DFLT_SPEED : opt.speed),
+    step: step,
+    start: start,
+    end: end,
+    isInp: isInp,
+    tmrId: 0,
+    prevPos: prevPos,
+    pos: pos,
+    cutLen: cutLen,
+    reverse: (opt.reverse ? true : false),
+    cursor: cursor,
+    cursorCnt: 0,
+    onprogress: opt.onprogress,
+    oncomplete: opt.oncomplete
+  };
+  return ctx;
+};
+util.textseq.idx = function(el) {
+  var ctxs = util.textseq.ctxs;
+  for (var i = 0; i < ctxs.length; i++) {
+    var ctx = ctxs[i];
+    if (ctx.el == el) return i;
+  }
+  return -1;
+};
+util.textseq.getCtx = function(el) {
+  var ctx = null;
+  var i = util.textseq.idx(el);
+  if (i >= 0) ctx = util.textseq.ctxs[i];
+  return ctx;
+};
+util.textseq.getSpeed = function(ctx) {
+  var speed = ctx.speed;
+  if (speed < 0) speed = util.textseq.DFLT_SPEED;
+  return speed;
+};
+util.textseq.blinkCursor = function(ctx) {
+  var speed = util.textseq.getSpeed(ctx);
+  var blnkNum = ctx.cursor.n * 2;
+  if (ctx.cursorCnt < blnkNum) {
+    ctx.cursorCnt++;
+    var c = (ctx.cursorCnt % 2 == 0) ? ' ' : '_';
+    var s = util.textseq.getText(ctx) + c;
+    util.textseq.print(ctx, s);
+    ctx.tmrId = setTimeout(util.textseq.blinkCursor, ctx.cursor.speed, ctx);
+  } else {
+    ctx.cursorCnt = 0;
+    ctx.tmrId = setTimeout((ctx.reverse ? util.textseq._reverse : util.textseq._textseq), speed, ctx);
+  }
+};
+util.textseq.print = function(ctx, s) {
+  if (ctx.isInp) {
+    ctx.el.value = s;
+  } else {
+    ctx.el.innerHTML = s;
+  }
+};
+util.textseq.DFLT_SPEED = 20;
+util.textseq.ctxs = [];
+
+//-----------------------------------------------------------------------------
 // Styles
 //-----------------------------------------------------------------------------
 util.CSS = '';
+util.STYLE = function() {/*
+.pointable:hover {
+  cursor: pointer !important;
+}
+.pseudo-link {
+  cursor: pointer;
+}
+.pseudo-link:hover {
+  text-decoration: underline;
+}
+.blink {animation: blinker 1.5s step-end infinite;}
+@keyframes blinker {
+  50% {opacity: 0;}
+  100% {opacity: 0;}
+}
+.blink2 {animation: blinker2 1s ease-in-out infinite alternate;}
+@keyframes blinker2 {
+  0% {opacity: 0;}
+  70% {opacity: 1;}
+}
+.blink3 {animation: blinker3 0.5s ease-in infinite alternate;}
+@keyframes blinker3 {
+  0% {opacity: 0;}
+  20% {opacity: 0;}
+  70% {opacity: 1;}
+}
+.flicker {animation: flicker1 0.7s linear;animation-fill-mode:both;opacity:1 !important;}
+@keyframes flicker1 {
+  0% {opacity: 0;}
+  10% {opacity: 1;}
+  20% {opacity: 0.1;}
+  25% {opacity: 1;}
+  35% {opacity: 0.1;}
+  40% {opacity: 1;}
+  50% {opacity: 0.1;}
+  80% {opacity: 1;}
+}
+.flicker-out {animation: flicker2 0.7s linear;animation-fill-mode:both;opacity:0 !important;}
+@keyframes flicker2 {
+  0% {opacity: 1;}
+  10% {opacity: 0.1;}
+  20% {opacity: 1;}
+  25% {opacity: 0.1;}
+  35% {opacity: 1;}
+  40% {opacity: 0.1;}
+  50% {opacity: 1;}
+  80% {opacity: 0;}
+}
+.progdot:after {content:"..."; animation: progdot1 1.2s linear infinite;}
+@keyframes progdot1 {
+  10% {content: "   ";}
+  20% {content: ".  ";}
+  30% {content: ".. ";}
+  40% {content: "...";}
+}
+.dialog {
+  background: #fff;
+  color: #000;
+}
+*/};
 
 util.registerStyle = function(style) {
   util.CSS += style;
 };
 
 util.setupStyle = function() {
-  util._registerStyle();
+  util.registerStyle(util.fn2text(util.STYLE));
   util.infotip.registerStyle();
   util.registerFadeStyle();
   util.loader.registerStyle();
-
   var head = document.head || document.getElementsByTagName('head').item(0);
   var style = document.createElement('style');
   var firstStyle = document.getElementsByTagName('style').item(0);
@@ -1944,51 +2963,13 @@ util.setupStyle = function() {
 };
 
 util.setStyle = function(el, n, v) {
-  el = $el(el);
-  el.style.setProperty(n, v, 'important');
+  el = util.getElement(el);
+  if (el) el.style.setProperty(n, v, 'important');
 };
 util.setStyles = function(el, s) {
   for (var k in s) {
     util.setStyle(el, k, s[k]);
   }
-};
-
-util._registerStyle = function() {
-  var style = '.pointable:hover {';
-  style += 'cursor: pointer !important;';
-  style += '}';
-  style += '.pseudo-link {';
-  style += 'cursor: pointer;';
-  style += '}';
-  style += '.pseudo-link:hover {';
-  style += 'text-decoration: underline;';
-  style += '}';
-
-  style += '.blink {animation: blinker 1.5s step-end infinite;}';
-  style += '@keyframes blinker {';
-  style += '50% {opacity: 0;}';
-  style += '100% {opacity: 0;}';
-  style += '}';
-
-  style += '.blink2 {animation: blinker2 1s ease-in-out infinite alternate;}';
-  style += '@keyframes blinker2 {';
-  style += '0% {opacity: 0;}';
-  style += '70% {opacity: 1;}';
-  style += '}';
-
-  style += '.progdot:after {content:"..."; animation: progdot1 1.2s linear infinite;}';
-  style += '@keyframes progdot1 {';
-  style += '10% {content: "";}';
-  style += '20% {content: ".";}';
-  style += '30% {content: "..";}';
-  style += '40% {content: "...";}';
-  style += '}';
-
-  style += '.dialog {';
-  style += 'background: #fff;';
-  style += 'color: #000;';
-  style += '}';
-  util.registerStyle(style);
 };
 
 //-----------------------------------------------------------------------------
@@ -2003,16 +2984,173 @@ util.infotip.ST_FADEOUT = 4;
 util.DFLT_DURATION = 1500;
 util.infotip.FADE_SPEED = 250;
 util.infotip.obj = {
-  id: 'infotip',
+  type: 'infotip',
   st: util.infotip.ST_HIDE,
-  el: {
-    body: null,
-    pre: null
-  },
-  duration: 0
+  el: {body: null, pre: null},
+  duration: 0,
+  timerId: 0
 };
 util.infotip.opt = null;
-util.infotip.timerId = 0;
+
+/**
+ * show("message");
+ * show("message", 3000);
+ * show("message", 0, {pos: {x: 100, y: 200});
+ * show("message", 0, {pos: 'pointer', offset: {x: 5, y: -8}});
+ * show("message", 0, {pos: 'active'});
+ * show("message", 0, {style: {'font-size': '18px'}});
+ */
+util.infotip.show = function(msg, duration, opt) {
+  var x, y, style, offset;
+  if (opt) {
+    if (opt.pos) {
+      if (opt.pos == 'pointer') {
+        x = util.mouseX;
+        y = util.mouseY;
+        if (!opt.offset) opt.offset = {x: 5, y: -8};
+        offset = opt.offset;
+      } else if (opt.pos == 'active') {
+        var el = document.activeElement;
+        var rect = el.getBoundingClientRect();
+        x = rect.left;
+        y = rect.top;
+      } else if (opt.pos.x != undefined) {
+        x = opt.pos.x;
+      }
+      if (opt.pos.y != undefined) y = opt.pos.y;
+    }
+    if (opt.style) style = opt.style;
+  }
+
+  var obj = util.infotip.obj;
+  if (duration == undefined) duration = util.DFLT_DURATION;
+  obj.duration = duration;
+  util.infotip._show(obj, msg, style);
+
+  if ((x != undefined) && (y != undefined)) {
+    util.infotip._move(obj, x, y, offset);
+  } else {
+    util.infotip._center(obj);
+  }
+  util.infotip.opt = opt;
+};
+util.infotip._show = function(obj, msg, style) {
+  if (!obj.el.body) {
+    var div = document.createElement('div');
+    div.className = 'infotip-wrp fadeout';
+    var pre = document.createElement('pre');
+    pre.className = 'infotip';
+    if (style) {
+      for (var p in style) {
+        util.setStyle(pre, p, style[p]);
+      }
+    }
+    div.appendChild(pre);
+    obj.el.body = div;
+    obj.el.pre = pre;
+    document.body.appendChild(div);
+  }
+  msg = (msg + '').replace(/\\n/g, '\n');
+  obj.el.pre.innerHTML = msg;
+  document.body.appendChild(obj.el.body);
+  if (obj.st == util.infotip.ST_SHOW) {
+    util.infotip.setHideTimer(obj);
+  } else {
+    obj.st = util.infotip.ST_FADEIN;
+    setTimeout(util.infotip.fadeIn, 10, obj);
+  }
+};
+
+util.infotip.fadeIn = function(obj) {
+  var cb = util.infotip.onFadeInCompleted;
+  util.fadeIn(obj.el.body, util.infotip.FADE_SPEED, cb, obj);
+  util.infotip.setHideTimer(obj);
+};
+util.infotip.onFadeInCompleted = function(el, obj) {
+  obj.st = util.infotip.ST_SHOW;
+};
+
+util.infotip.setHideTimer = function(obj) {
+  if (obj.duration > 0) {
+    if (obj.timerId) clearTimeout(obj.timerId);
+    obj.timerId = setTimeout(util.infotip._hide, obj.duration, obj);
+  }
+};
+
+/**
+ * move
+ */
+util.infotip.move = function(x, y, offset) {
+  util.infotip._move(util.infotip.obj, x, y, offset);
+};
+
+util.infotip._move = function(obj, x, y, offset) {
+  var ttBody = obj.el.body;
+  if (!ttBody) return;
+  var rect = ttBody.getBoundingClientRect();
+  if (offset) {
+    x += offset.x;
+    y += offset.y;
+    if (offset.y < 0) y -= rect.height;
+  }
+  if (y < 0) y = 0;
+  var cliW = util.getClientWidth();
+  if (x + rect.width > cliW) x = cliW - rect.width;
+  if (x < 0) x = 0;
+  ttBody.style.left = x + 'px';
+  ttBody.style.top = y + 'px';
+};
+
+util.infotip.center = function() {
+  util.infotip._center(util.infotip.obj);
+};
+util.infotip._center = function(obj) {
+  var infotip = obj.el.body;
+  util.center(infotip);
+};
+
+/**
+ * Hide a infotip
+ */
+util.infotip.hide = function() {
+  var obj = util.infotip.obj;
+  if (obj.timerId) {
+    clearTimeout(obj.timerId);
+    obj.timerId = 0;
+  }
+  util.infotip._hide(obj);
+};
+util.infotip._hide = function(obj) {
+  var delay = util.infotip.FADE_SPEED;
+  obj.st = util.infotip.ST_FADEOUT;
+  util.fadeOut(obj.el.body, delay);
+  obj.timerId = setTimeout(util.infotip.onFadeOutCompleted, delay, null, obj);
+};
+util.infotip.onFadeOutCompleted = function(el, obj) {
+  util.infotip.__hide(obj);
+};
+util.infotip.__hide = function(obj) {
+  var div = obj.el.body;
+  if ((div != null) && (div.parentNode)) document.body.removeChild(div);
+  obj.el.pre = null;
+  obj.el.body = null;
+  if (obj.id == 'infotip') util.infotip.opt = null;
+  obj.st = util.infotip.ST_HIDE;
+};
+
+util.infotip.isVisible = function() {
+  return util.infotip.obj.el != null;
+};
+
+util.infotip.adjust = function() {
+  if (util.infotip.isVisible()) util.infotip.center();
+};
+
+util.infotip.onMouseMove = function(x, y) {
+  if (util.infotip.opt && util.infotip.opt.pos == 'pointer') {
+    util.infotip.move(x, y, util.infotip.opt.offset);
+  }
+};
 
 util.infotip.registerStyle = function() {
   var style = '.infotip-wrp {';
@@ -2043,257 +3181,74 @@ util.infotip.registerStyle = function() {
   util.registerStyle(style);
 };
 
-/**
- * show("message");
- * show("message", 3000);
- * show("message", 0, {pos: {x: 100, y: 200});
- * show("message", 0, {pos: 'pointer', offset: {x: 5, y: -8}});
- * show("message", 0, {pos: 'active'});
- * show("message", 0, {style: {'font-size': '18px'}});
- */
-util.infotip.show = function(msg, duration, opt) {
-  var x;
-  var y;
-  var style;
-  var offset;
-
-  if (opt) {
-    if (opt.pos) {
-      if (opt.pos == 'pointer') {
-        x = util.mouseX;
-        y = util.mouseY;
-        if (!opt.offset) {
-          opt.offset = {
-            x: 5,
-            y: -8
-          };
-        }
-        offset = opt.offset;
-      } else if (opt.pos == 'active') {
-        var el = document.activeElement;
-        var rect = el.getBoundingClientRect();
-        x = rect.left;
-        y = rect.top;
-      } else if (opt.pos.x != undefined) {
-        x = opt.pos.x;
-      }
-
-      if (opt.pos.y != undefined) {
-        y = opt.pos.y;
-      }
-    }
-
-    if (opt.style) {
-      style = opt.style;
-    }
-  }
-
-  var obj = util.infotip.obj;
-  if (duration == undefined) duration = util.DFLT_DURATION;
-  obj.duration = duration;
-  util.infotip._show(obj, msg, style);
-
-  if ((x != undefined) && (y != undefined)) {
-    util.infotip._move(obj, x, y, offset);
-  } else {
-    util.infotip._center(obj);
-  }
-  util.infotip.opt = opt;
-
-};
-
-util.infotip._show = function(obj, msg, style) {
-  if (!obj.el.body) {
-    var div = document.createElement('div');
-    div.className = 'infotip-wrp fadeout';
-    var pre = document.createElement('pre');
-    pre.className = 'infotip';
-    if (style) {
-      for (var p in style) {
-        util.setStyle(pre, p, style[p]);
-      }
-    }
-    div.appendChild(pre);
-    obj.el.body = div;
-    obj.el.pre = pre;
-    document.body.appendChild(div);
-  }
-  msg = (msg + '').replace(/\\n/g, '\n');
-  obj.el.pre.innerHTML = msg;
-  document.body.appendChild(obj.el.body);
-  if (obj.st != util.infotip.ST_SHOW) {
-    obj.st = util.infotip.ST_FADEIN;
-     setTimeout(util.infotip.fadeIn, 10, obj);
-  }
-};
-
-util.infotip.fadeIn = function(obj) {
-  var cb = util.infotip.onFadeInCompleted;
-  util.fadeIn(obj.el.body, util.infotip.FADE_SPEED, cb, obj);
-  var duration = obj.duration;
-  if (duration > 0) {
-    if (util[obj.id].timerId) {
-      clearTimeout(util[obj.id].timerId);
-    }
-    util[obj.id].timerId = setTimeout(util.infotip.hide, duration, obj);
-  }
-};
-util.infotip.onFadeInCompleted = function(el, obj) {
-  obj.st = util.infotip.ST_SHOW;
-};
-
-/**
- * move
- */
-util.infotip.move = function(x, y, offset) {
-  util.infotip._move(util.infotip.obj, x, y, offset);
-};
-
-util.infotip._move = function(obj, x, y, offset) {
-  var ttBody = obj.el.body;
-  if (!ttBody) return;
-  var rect = ttBody.getBoundingClientRect();
-  if (offset) {
-    x += offset.x;
-    y += offset.y;
-    if (offset.y < 0) {
-      y -= rect.height;
-    }
-  }
-  if (y < 0) {
-    y = 0;
-  }
-  ttBody.style.left = x + 'px';
-  ttBody.style.top = y + 'px';
-};
-
-util.infotip.center = function() {
-  util.infotip._center(util.infotip.obj);
-};
-
-util.infotip._center = function(obj) {
-  var infotip = obj.el.body;
-  util.center(infotip);
-};
-
-/**
- * Hide a infotip
- */
-util.infotip.hide = function(obj) {
-  var delay = util.infotip.FADE_SPEED;
-  obj.st = util.infotip.ST_FADEOUT;
-  util.fadeOut(obj.el.body, delay);
-  util[obj.id].timerId = setTimeout(util.infotip.onFadeOutCompleted, delay, null, obj);
-};
-util.infotip.onFadeOutCompleted = function(el, obj) {
-  util.infotip._hide(obj);
-};
-util.infotip._hide = function(obj) {
-  var div = obj.el.body;
-  if ((div != null) && (div.parentNode)) {
-    document.body.removeChild(div);
-  }
-  obj.el.pre = null;
-  obj.el.body = null;
-  if (obj.id == 'infotip') {
-    util.infotip.opt = null;
-  }
-  obj.st = util.infotip.ST_HIDE;
-};
-
-util.infotip.isVisible = function() {
-  return util.infotip.obj.el != null;
-};
-
-util.infotip.adjust = function() {
-  if (util.infotip.isVisible()) {
-    util.infotip.center();
-  }
-};
-
-util.infotip.onMouseMove = function(x, y) {
-  if (util.infotip.opt && util.infotip.opt.pos == 'pointer') {
-    util.infotip.move(x, y, util.infotip.opt.offset);
-  }
-};
-
 //-----------------------------------------------------------------------------
 // Tooltip
 //-----------------------------------------------------------------------------
 util.tooltip = {};
-util.tooltip.DELAY = 500;
-util.tooltip.offset = {
-  x: 5,
-  y: -8
-};
+util.tooltip.DELAY = 350;
+util.tooltip.offset = {x: 5, y: -8};
 util.tooltip.targetEl = null;
-util.tooltip.timerId = 0;
 util.tooltip.obj = {
-  id: 'tooltip',
+  type: 'tooltip',
   st: util.infotip.ST_HIDE,
-  el: {
-    body: null,
-    pre: null
-  }
+  el: {body: null, pre: null},
+  timerId: 0
 };
 util.tooltip.disabled = false;
 util.tooltip.show = function(el, msg, x, y) {
-  if (util.tooltip.obj.st == util.infotip.ST_FADEOUT) {
-    util.tooltip.cancel();
-  }
-  if ((el == util.tooltip.targetEl) && (util.tooltip.obj.st >= util.infotip.ST_OPEN)) {
-    util.infotip._move(util.tooltip.obj, x, y, util.tooltip.offset);
+  var obj = util.tooltip.obj;
+  if (obj.st == util.infotip.ST_FADEOUT) util.tooltip.cancel(obj);
+  if ((el == util.tooltip.targetEl) && (obj.st >= util.infotip.ST_OPEN)) {
+    util.infotip._move(obj, x, y, util.tooltip.offset);
   } else {
-    if (util.tooltip.obj.st != util.infotip.ST_SHOW) {
-      util.tooltip.obj.st = util.infotip.ST_OPEN;
-    }
+    if (obj.st != util.infotip.ST_SHOW) obj.st = util.infotip.ST_OPEN;
     util.tooltip.targetEl = el;
-    if (util.tooltip.obj.el.body) {
+    if (obj.el.body) {
       util.tooltip._show(msg);
     } else {
-      if (util.tooltip.timerId) {
-        clearTimeout(util.tooltip.timerId);
-      }
-      util.tooltip.timerId = setTimeout(util.tooltip._show, util.tooltip.DELAY, msg);
+      if (obj.timerId) clearTimeout(obj.timerId);
+      obj.timerId = setTimeout(util.tooltip._show, util.tooltip.DELAY, msg);
     }
   }
 };
 util.tooltip._show = function(msg) {
-  var st = util.tooltip.obj.st;
-  if ((st == util.infotip.ST_FADEOUT) || (st == util.infotip.ST_HIDE)) {
-    util.tooltip.cancel();
-    return;
+  var obj = util.tooltip.obj;
+  var st = obj.st;
+  if (st == util.infotip.ST_FADEOUT) {
+    clearTimeout(obj.timerId);
+    obj.timerId = 0;
   }
   var x = util.mouseX;
   var y = util.mouseY;
   var el = document.elementFromPoint(x, y);
   if (!el || (el != util.tooltip.targetEl)) {
+    util.tooltip.cancel(obj);
     return;
   }
-  util.infotip._show(util.tooltip.obj, msg);
-  util.infotip._move(util.tooltip.obj, x, y, util.tooltip.offset);
+  util.infotip._show(obj, msg);
+  util.infotip._move(obj, x, y, util.tooltip.offset);
 };
 
 util.tooltip.hide = function() {
-  util.infotip.hide(util.tooltip.obj);
+  util.infotip._hide(util.tooltip.obj);
   util.tooltip.targetEl = null;
 };
 
-util.tooltip.cancel = function() {
+util.tooltip.cancel = function(obj) {
   util.tooltip.targetEl = null;
-  if (util.tooltip.timerId) {
-    clearTimeout(util.tooltip.timerId);
-    util.tooltip.timerId = 0;
+  if (obj.timerId) {
+    clearTimeout(obj.timerId);
+    obj.timerId = 0;
   }
-  util.infotip.onFadeOutCompleted(null, util.tooltip.obj);
+  util.infotip.__hide(obj);
 };
 
 util.tooltip.onMouseMove = function(x, y) {
   if (util.tooltip.disabled) return;
   var el = document.elementFromPoint(x, y);
-  var tooltip = ((el && el.dataset) ? el.dataset.tooltip : null);
-  if (tooltip) {
-    util.tooltip.show(el, tooltip, x, y);
+  var tpData = ((el && el.dataset) ? el.dataset.tooltip : null);
+  if (tpData) {
+    util.tooltip.show(el, tpData, x, y);
   } else if (util.tooltip.obj.el.body) {
     util.tooltip.hide();
   }
@@ -2307,21 +3262,15 @@ util.tooltip.setDelay = function(ms) {
 // Fade in / out
 //-----------------------------------------------------------------------------
 util.registerFadeStyle = function() {
-  var style = '.fadein {';
-  style += '  opacity: 1 !important;';
-  style += '}';
-  style += '.fadeout {';
-  style += '  opacity: 0 !important;';
-  style += '}';
+  var style = '.fadein {opacity: 1 !important;}';
+  style += '.fadeout {opacity: 0 !important;}';
   util.registerStyle(style);
 };
 
 util.fadeIn = function(el, speed, cb, arg) {
-  el = $el(el);
+  el = util.getElement(el);
   if (!el) return;
-  if ((speed == undefined) || (speed < 0)) {
-    speed = util.DFLT_FADE_SPEED;
-  }
+  if ((speed == undefined) || (speed < 0)) speed = util.DFLT_FADE_SPEED;
   if (el.fadeTimerId > 0) {
     clearTimeout(el.fadeTimerId);
     el.fadeTimerId = 0;
@@ -2339,17 +3288,13 @@ util._fadeIn = function(el, speed, cb, arg) {
 };
 util.__fadeIn = function(dat) {
   dat.el.fadeTimerId = 0;
-  if (dat.cb) {
-    dat.cb(dat.el, dat.arg);
-  }
+  if (dat.cb) dat.cb(dat.el, dat.arg);
 };
 
 util.fadeOut = function(el, speed, cb, arg) {
-  el = $el(el);
+  el = util.getElement(el);
   if (!el) return;
-  if ((speed == undefined) || (speed < 0)) {
-    speed = util.DFLT_FADE_SPEED;
-  }
+  if ((speed == undefined) || (speed < 0)) speed = util.DFLT_FADE_SPEED;
   if (el.fadeTimerId > 0) {
     clearTimeout(el.fadeTimerId);
     el.fadeTimerId = 0;
@@ -2367,9 +3312,7 @@ util._fadeOut = function(el, speed, cb, arg) {
 };
 util.__fadeOut = function(dat) {
   dat.el.fadeTimerId = 0;
-  if (dat.cb) {
-    dat.cb(dat.el, dat.arg);
-  }
+  if (dat.cb) dat.cb(dat.el, dat.arg);
 };
 
 //-----------------------------------------------------------------------------
@@ -2383,20 +3326,18 @@ util.fadeScreenEl = null;
  * onLoad()
  *   fadeScreenIn()
  */
-util.initScreenFader = function(a) {
+util.initScreenFader = function(a, bg) {
   var el = util.fadeScreenEl;
-  if (!el) el = $el(a);
-  if (!el) el = util.createFadeScreenEl();
+  if (!el) el = util.getElement(a);
+  if (!el) el = util.createFadeScreenEl(bg);
   util.fadeScreenEl = el;
   document.body.appendChild(el);
   return el;
 };
 
-util.fadeScreenIn = function(speed, cb) {
-  if (speed == undefined) {
-    speed = util.DFLT_FADE_SPEED;
-  }
-  var el = util.initScreenFader();
+util.fadeScreenIn = function(speed, cb, bg) {
+  if (speed == undefined) speed = util.DFLT_FADE_SPEED;
+  var el = util.initScreenFader(null, bg);
   util.fadeScreenIn.cb = cb;
   util.fadeOut(el, speed, util._fadeScreenIn);
 };
@@ -2408,23 +3349,22 @@ util._fadeScreenIn = function() {
   if (cb) cb();
 };
 
-util.fadeScreenOut = function(speed, cb) {
-  if (speed == undefined) {
-    speed = util.DFLT_FADE_SPEED;
-  }
-  var el = util.initScreenFader();
+util.fadeScreenOut = function(speed, cb, bg) {
+  if (speed == undefined) speed = util.DFLT_FADE_SPEED;
+  var el = util.initScreenFader(null, bg);
   util.fadeIn(el, speed, cb);
 };
 
-util.createFadeScreenEl = function() {
+util.createFadeScreenEl = function(bg) {
   var el = document.createElement('div');
+  if (!bg) bg = '#fff';
   var style = {
     'position': 'fixed',
     'width': '100vw',
     'height': '100vh',
     'top': '0',
     'left': '0',
-    'background': '#fff',
+    'background': bg,
     'z-index': util.SCREEN_FADER_ZINDEX
   };
   util.setStyles(el, style);
@@ -2470,13 +3410,9 @@ util.loader.registerStyle = function() {
 };
 
 util.loader.show = function(delay) {
-  if (delay == undefined) {
-    delay = 500;
-  }
   util.loader.count++;
-  if (util.loader.count > 1) {
-    return;
-  }
+  if (util.loader.count > 1) return;
+  if (delay == undefined) delay = 500;
   util.loader.timerId = setTimeout(util.loader._show, delay);
 };
 util.loader._show = function() {
@@ -2529,17 +3465,11 @@ util.modal = function(child, addCloseHandler) {
   var el = document.createElement('div');
   var style = {};
   util.copyProps(util.modal.DFLT_STYLE, style);
-  if (util.modal.style) {
-    util.copyProps(util.modal.style, style);
-  }
+  if (util.modal.style) util.copyProps(util.modal.style, style);
   util.setStyles(el, style);
   el.style.opacity = '0';
-  if (addCloseHandler) {
-    el.addEventListener('click', this.onClick);
-  }
-  if (child) {
-    el.appendChild(child);
-  }
+  if (addCloseHandler) el.addEventListener('click', this.onClick);
+  if (child) el.appendChild(child);
   el.ctx = this;
   this.el = el;
 };
@@ -2577,9 +3507,7 @@ util.modal.prototype = {
 
   onClick: function(e) {
     var el = e.target;
-    if (el.ctx && (el.ctx.sig == 'modal')) {
-      el.ctx.hide();
-    }
+    if (el.ctx && (el.ctx.sig == 'modal')) el.ctx.hide();
   }
 };
 util.modal.show = function(el, closeAnywhere) {
@@ -2611,14 +3539,8 @@ util.modal.style = null;
  * opt = {
  *   title: 'Title',
  *   buttons = [
- *     {
- *       label: 'Yes',
- *       cb: function1
- *     },
- *     {
- *       label: 'No',
- *       cb: function2
- *     }
+ *     {label: 'Yes', cb: function1},
+ *     {label: 'No', cb: function2}
  *   ],
  *   style: {
  *     body: {
@@ -2654,9 +3576,7 @@ util.dialog = function(content, opt) {
 
   var closeAnywhere = false;
   if (opt) {
-    if (opt.closeAnywhere) {
-      closeAnywhere = true;
-    }
+    if (opt.closeAnywhere) closeAnywhere = true;
   }
 
   ctx.modal = util.modal.show(ctx.el, closeAnywhere);
@@ -2749,9 +3669,7 @@ util.dialog.prototype = {
           'margin-top': '1em',
           'margin-bottom': '0',
         };
-        if (i > 0) {
-          style['margin-left'] = '0.5em';
-        }
+        if (i > 0) style['margin-left'] = '0.5em';
         util.setStyles(btnEl, style);
         if (opt && opt.style && opt.style.button) {
           for (key in opt.style.button) {
@@ -2769,11 +3687,7 @@ util.dialog.prototype = {
       }
     }
     if (opt.focusEl) util.dialog.initFocusEl = opt.focusEl;
-    var ret = {
-      boby: body,
-      btnEls: btnEls
-    };
-    return ret;
+    return {boby: body, btnEls: btnEls};
   },
 
   close: function(ctx) {
@@ -2797,9 +3711,7 @@ util.dialog.focusBtn = function() {
 util.dialog.getTopDialog = function() {
   var dialog = null;
   var instances = util.dialog.instances;
-  if (instances.length > 0) {
-    dialog = instances[instances.length - 1];
-  }
+  if (instances.length > 0) dialog = instances[instances.length - 1];
   return dialog;
 };
 util.dialog.adjust = function() {
@@ -2815,11 +3727,7 @@ util.dialog.show = function() {
 // opt = {
 //   title: 'Title',
 //   buttons = [
-//     {
-//       label: 'Yes',
-//       focus: true,
-//       cb: cbYes
-//     },
+//     {label: 'Yes', focus: true, cb: cbYes},
 //     ...
 //   ],
 //   style: {
@@ -2841,11 +3749,7 @@ util.dialog.open = function(content, opt) {
     'text-align': 'center'
   };
   if (!opt) opt = {};
-  if (!opt.style) {
-    opt.style = {
-      body: DEFAULT_STYLE
-    };
-  }
+  if (!opt.style) opt.style = {body: DEFAULT_STYLE};
   var dialog = new util.dialog(content, opt);
   util.dialog.instances.push(dialog);
   return dialog;
@@ -2867,16 +3771,15 @@ util.dialog.btnHandler = function(el) {
 
 util.dialog.close = function(btnIdx) {
   var dialog = util.dialog.instances.pop();
-  if (dialog) {
-    if (btnIdx == undefined) {
-      dialog.close(dialog);
+  if (!dialog) return;
+  if (btnIdx == undefined) {
+    dialog.close(dialog);
+  } else {
+    var b = dialog.btnEls[btnIdx];
+    if (b) {
+      util.dialog.btnHandler(b);
     } else {
-      var b = dialog.btnEls[btnIdx];
-      if (b) {
-        util.dialog.btnHandler(b);
-      } else {
-        dialog.close(dialog);
-      }
+      dialog.close(dialog);
     }
   }
 };
@@ -2932,18 +3835,10 @@ util.dialog.info = function(a1, a2, a3, a4) {
       cb = null;
     }
   }
-  if (a[i]) {
-    opt = a[i];
-  }
+  if (a[i]) opt = a[i];
   var dialogOpt = {
     title: title,
-    buttons: [
-      {
-        label: 'OK',
-        focus: true,
-        cb: cb
-      }
-    ],
+    buttons: [{label: 'OK', focus: true, cb: cb}],
     style: opt.style
   };
   msg = util.null2empty(msg);
@@ -3013,9 +3908,7 @@ util.dialog.confirm = function(a1, a2, a3, a4, a5) {
   } else {
     k--;
   }
-  if (a[k]) {
-    opt = a[k];
-  }
+  if (a[k]) opt = a[k];
   var definition = {
     labelY: 'Yes',
     labelN: 'No',
@@ -3032,7 +3925,6 @@ util.dialog.confirm = function(a1, a2, a3, a4, a5) {
     }
   }
   content.innerHTML = msg;
-
   var dialog = new util.dialog.confirmDialog(title, content, definition, opt);
   dialog.cbY = cbY;
   dialog.cbN = cbN;
@@ -3042,19 +3934,11 @@ util.dialog.confirmDialog = function(title, content, definition, opt) {
   var ctx = this;
   ctx.data = opt.data;
   var buttons = [
-    {
-      label: definition.labelY,
-      cb: definition.cbY
-    },
-    {
-      label: definition.labelN,
-      cb: definition.cbN
-    }
+    {label: definition.labelY, cb: definition.cbY},
+    {label: definition.labelN, cb: definition.cbN}
   ];
   var focusIdx = 0;
-  if (opt.focus == 'no') {
-    focusIdx = 1;
-  }
+  if (opt.focus == 'no') focusIdx = 1;
   buttons[focusIdx].focus = true;
   var dialogOpt = {
     title: title,
@@ -3130,21 +4014,16 @@ util.dialog.text = function(a1, a2, a3, a4, a5) {
   } else {
     k--;
   }
-  if (a[k]) {
-    opt = a[k];
-  }
+  if (a[k]) opt = a[k];
   var txtBox = document.createElement('input');
-  if (opt.secure) {
-    txtBox.type = 'password';
-  } else {
-    txtBox.type = 'text';
-  }
+  txtBox.type = (opt.secure ? 'password' : 'text');
   txtBox.className = 'dialog-textbox';
   if (opt && opt.style && opt.style.textbox) {
     for (var key in opt.style.textbox) {
       util.setStyle(txtBox, key, opt.style.textbox[key]);
     }
   }
+  txtBox.spellcheck = false;
   var body = document.createElement('div');
   var wrp1 = document.createElement('div');
   wrp1.style.display = 'inline-block';
@@ -3209,6 +4088,8 @@ util.confirm = function(a1, a2, a3, a4, a5) {
  *  background
  *  border
  *  borderRadius
+ *  transition
+ *  color
  *  green
  *  yellow
  *  red,
@@ -3228,8 +4109,11 @@ util.confirm = function(a1, a2, a3, a4, a5) {
  * <div id="meter1"></div>
  * var m = new util.Meter('#meter1', opt);
  */
+util.initMeter = function(target, opt) {
+  return new util.Meter(target, opt);
+};
 util.Meter = function(target, opt) {
-  target = $el(target);
+  target = util.getElement(target);
   target.innerHTML = '';
 
   var min = 0;
@@ -3259,9 +4143,15 @@ util.Meter = function(target, opt) {
     if (opt.background != undefined) bg = opt.background;
     if (opt.border != undefined) bd = opt.border;
     if (opt.borderRadius != undefined) bdRd = opt.borderRadius;
-    if (opt.green != undefined) green = opt.green;
-    if (opt.yellow != undefined) yellow = opt.yellow;
-    if (opt.red != undefined) red = opt.red;
+    if (opt.color) {
+      green = opt.color;
+      yellow = opt.color;
+      red = opt.color;
+    } else {
+      if (opt.green != undefined) green = opt.green;
+      if (opt.yellow != undefined) yellow = opt.yellow;
+      if (opt.red != undefined) red = opt.red;
+    }
   }
 
   if (low == undefined) low = min;
@@ -3293,8 +4183,10 @@ util.Meter = function(target, opt) {
   style = {
     width: v + '%',
     height: '100%',
-    background: green
+    background: green,
+    transition: 'all 0.25s ease-out'
   };
+  if (opt && opt.transition) style.transition = opt.transition;
   util.setStyles(bar, style);
   base.appendChild(bar);
 
@@ -3344,9 +4236,7 @@ util.Meter = function(target, opt) {
       'vertical-align': 'middle'
     };
     util.setStyles(lblEl, s);
-    if (label.style) {
-      util.setStyles(lblEl, label.style);
-    }
+    if (label.style) util.setStyles(lblEl, label.style);
     lblEl.innerHTML = label.text;
     base.appendChild(lblEl);
   }
@@ -3380,12 +4270,8 @@ util.Meter.prototype = {
     return this.value;
   },
   setValue: function(v, txt) {
-    if (v != null) {
-      this._setValue(v);
-    }
-    if (txt != undefined) {
-      this.setText(txt);
-    }
+    if (v != null) this._setValue(v);
+    if (txt != undefined) this.setText(txt);
     this.redraw();
   },
   _setValue: function(v) {
@@ -3502,138 +4388,179 @@ util.Meter.buildHTML = function(val, opt) {
 //-----------------------------------------------------------------------------
 // LED
 //-----------------------------------------------------------------------------
+// var led = new util.Led('#led1', opt);
+// led.on();
+// led.off();
+// led.blink();
+// led.setLavel('TEXT');
 /**
  * opt = {
  *   size: '16px',
  *   color: '#0f0',
+ *   offColor: '#888',
  *   shadow: '0 0 5px',
  *   className: 'xxx',
+ *   labelClassName: 'xxx',
  *   active: true
  * };
  */
 util.Led = function(target, opt) {
-  var el = $el(target);
-  var size = '16px';
-  var color = util.Led.DFLT_COLOR;
-  var shadow = '0 0 5px';
-  var className = '';
-  var active = false;
+  var baseEl = util.getElement(target);
+  if (!opt) opt = {};
+  if (opt.size == undefined) opt.size = '16px';
+  if (opt.color == undefined) opt.color = util.Led.DFLT_COLOR;
+  if (opt.offColor == undefined) opt.offColor = util.Led.DFLT_INACTV_COLOR;
+  if (opt.shadow == undefined) opt.shadow = '0 0 5px';
+  var active = opt.active ? true : false;
 
-  if (opt) {
-    if (opt.size != undefined) size = opt.size;
-    if (opt.color != undefined) color = opt.color;
-    if (opt.shadow != undefined) shadow = opt.shadow;
-    if (opt.className != undefined) className = opt.className;
-    if (opt.active) active = true;
-  }
-
-  util.addClass(el, 'led');
-  if (className) util.addClass(el, className);
+  var ledEl = document.createElement('span');
+  util.addClass(ledEl, 'led');
+  if (opt.className) util.addClass(ledEl, opt.className);
   var style = {
-    'font-size': size,
-    color: (active ? color : util.Led.INACTV_COLOR)
+    'font-size': opt.size,
+    color: (active ? opt.color : opt.offColor),
+    cursor: 'default'
   };
-  if (shadow) style['text-shadow'] = shadow;
-  util.setStyles(el, style);
-  el.innerHTML = '&#x25CF;';
+  if (opt.shadow) style['text-shadow'] = opt.shadow;
+  util.setStyles(ledEl, style);
+  ledEl.innerHTML = '&#x25CF;';
+  baseEl.appendChild(ledEl);
 
-  this.el = el;
-  this.size = size;
-  this.color = color;
+  this.opt = opt;
+  this.baseEl = baseEl;
+  this.ledEl = ledEl;
+  this.labelEl = null;
   this.active = active;
   this.lighted = active;
   this.timerId = 0;
   this.blinkDuration = util.Led.DFLT_BLINK_DURATION;
 };
 util.Led.DFLT_COLOR = '#0f0';
-util.Led.INACTV_COLOR = '#888';
+util.Led.DFLT_INACTV_COLOR = '#888';
 util.Led.DFLT_BLINK_DURATION = 700;
 util.Led.prototype = {
-  on: function() {
+  on: function(color) {
     var ctx = this;
+    ctx._stopBlink();
+    if (color) ctx.opt.color = color;
     ctx.active = true;
     ctx._on(ctx);
   },
-  off: function() {
+  off: function(color) {
     var ctx = this;
+    ctx._stopBlink();
+    if (color) ctx.opt.offColor = color;
     ctx.active = false;
     ctx._off(ctx);
   },
   toggle: function() {
     var ctx = this;
     if (ctx.active) {
-      ctx.off(ctx);
+      ctx.off();
     } else {
-      ctx.on(ctx);
+      ctx.on();
     }
   },
   _on: function(ctx) {
     ctx.lighted = true;
-    util.setStyle(ctx.el, 'color', ctx.color);
+    util.setStyle(ctx.ledEl, 'color', ctx.opt.color);
   },
   _off: function(ctx) {
     ctx.lighted = false;
-    util.setStyle(ctx.el, 'color', util.Led.INACTV_COLOR);
+    util.setStyle(ctx.ledEl, 'color', ctx.opt.offColor);
   },
-  startBlink: function(d) {
+  blink: function(d) {
     var ctx = this;
+    ctx._stopBlink();
+    if (d === false) return;
     d |= 0;
-    if (d <= 0) {
-      d = util.Led.DFLT_BLINK_DURATION;
-    }
+    if (d <= 0) d = util.Led.DFLT_BLINK_DURATION;
     ctx.blinkDuration = d;
-    ctx.stopBlink();
-    ctx.blink(ctx);
+    ctx._blink(ctx);
   },
-  stopBlink: function(on) {
+  _blink: function(ctx) {
+    if (ctx.lighted) {
+      ctx._off(ctx);
+    } else {
+      ctx._on(ctx);
+    }
+    ctx.timerId = setTimeout(ctx._blink, ctx.blinkDuration, ctx);
+  },
+  blink2: function(a) {
     var ctx = this;
+    if (a == undefined) a = true;
+    ctx._stopBlink();
+    if (a) {
+      ctx._on(ctx);
+      util.addClass(ctx.ledEl, 'blink2');
+    }
+  },
+  _stopBlink: function() {
+    var ctx = this;
+    util.removeClass(ctx.ledEl, 'blink2');
     if (ctx.timerId > 0) {
       clearTimeout(ctx.timerId);
       ctx.timerId = 0;
     }
-    var active = on;
-    if (on == undefined) {
-      active = ctx.active;
-    }
+    var active = ctx.active;
     if (active) {
       ctx._on(ctx);
     } else {
       ctx._off(ctx);
     }
   },
-  blink: function(ctx) {
-    if (ctx.lighted) {
-      ctx._off(ctx);
-    } else {
-      ctx._on(ctx);
-    }
-    ctx.timerId = setTimeout(ctx.blink, ctx.blinkDuration, ctx);
-  },
-  setColor: function(c) {
-    this.color = c;
-    if (this.active) {
-      this.on();
-    }
-  },
   isActive: function() {
     return this.active;
   },
+  setColor: function(c) {
+    var ctx = this;
+    ctx.opt.color = c;
+    if (ctx.lighted) {
+      ctx._on(ctx);
+    }
+  },
+  setOffColor: function(c) {
+    var ctx = this;
+    ctx.opt.offColor = c;
+    if (!ctx.lighted) {
+      ctx._off(ctx);
+    }
+  },
+  setLabel: function(txt) {
+    var ctx = this;
+    var el = ctx.labelEL;
+    if (!el) {
+      el = document.createElement('span');
+      util.addClass(el, 'led-label');
+      if (ctx.opt.labelClassName) {
+        util.addClass(el, ctx.opt.labelClassName);
+      } else {
+        el.style.marginLeft = '4px';
+      }
+      ctx.baseEl.appendChild(el);
+    }
+    el.innerHTML = txt;
+    ctx.labelEL = el;
+  },
   getElement: function() {
-    return this.el;
+    return this.baseEl;
+  },
+  getLedElement: function() {
+    return this.ledEl;
   }
 };
 
 //-----------------------------------------------------------------------------
 // Form
 //-----------------------------------------------------------------------------
-util.submit = function(url, method, params, enc) {
+util.submit = function(url, method, params, uriEnc) {
   var form = document.createElement('form');
   form.action = url;
   form.method = method;
   for (var key in params) {
     var input = document.createElement('input');
     var val = params[key];
-    if (enc) val = encodeURIComponent(val);
+    if (uriEnc) val = encodeURIComponent(val);
     input.type = 'hidden';
     input.name = key;
     input.value = val;
@@ -3641,6 +4568,10 @@ util.submit = function(url, method, params, enc) {
   }
   document.body.appendChild(form);
   form.submit();
+};
+
+util.postSubmit = function(url, params, uriEnc) {
+  util.submit(url, 'POST', params, uriEnc);
 };
 
 //-----------------------------------------------------------------------------
@@ -3741,6 +4672,71 @@ util.getBrowserType = function(ua) {
   }
   return brws;
 };
+util.getColoredBrowserName = function(n, dark) {
+  if (!n) {
+    var b = util.getBrowserType();
+    n = b.name;
+  }
+  var s = n;
+  var c;
+  switch (n) {
+    case 'Chrome':
+      if (dark) {
+        s = '<span style="color:#f44">Ch</span><span style="color:#ff0">ro</span><span style="color:#4f4">m</span><span style="color:#6cf">e</span>';
+      } else {
+        s = '<span style="color:#f44">Ch</span><span style="color:#cc0">ro</span><span style="color:#2d2">m</span><span style="color:#0af">e</span>';
+      }
+      break;
+    case 'Edge':
+      if (dark) {
+        s = '<span style="color:#4e7">E</span><span style="color:#3df">d</span><span style="color:#0af">ge</span>';
+      } else {
+        s = '<span style="color:#2c4">E</span><span style="color:#0cf">d</span><span style="color:#08d">ge</span>';
+      }
+      break;
+    case 'Edge Legacy':
+      if (dark) {
+        c = '#0af';
+      } else {
+        c = '#08d';
+      }
+      s = '<span style="color:' + c + '">Edge</span>';
+      break;
+    case 'Firefox':
+      if (dark) {
+        c = '#e57f25';
+      } else {
+        c = '#e60';
+      }
+      s = '<span style="color:' + c + '">' + n + '</span>';
+      break;
+    case 'Opera':
+      if (dark) {
+        c = '#f44';
+      } else {
+        c = '#ff1b2c';
+      }
+      s = '<span style="color:' + c + '">' + n + '</span>';
+      break;
+    case 'IE11':
+    case 'IE10':
+    case 'IE9':
+      if (dark) {
+        c = '#61d5f8';
+      } else {
+        c = '#0af';
+      }
+      s = '<span style="color:' + c + '">' + n + '</span>';
+      break;
+    case 'Safari':
+      s = '<span style="color:#86c8e8">Safa</span><span style="color:#dd5651">r</span><span style="color:#ececec">i</span>';
+      break;
+    default:
+      b = util.getBrowserType(n);
+      if (b.name) s = util.getColoredBrowserName(b.name);
+  }
+  return s;
+};
 
 //-----------------------------------------------------------------------------
 // Base64
@@ -3799,6 +4795,7 @@ util.Base64.decode = function(str) {
 };
 
 util.encodeBase64 = function(s) {
+  if (s == undefined) return '';
   var r;
   try {
     r = btoa(s);
@@ -3808,8 +4805,8 @@ util.encodeBase64 = function(s) {
   return r;
 };
 util.decodeBase64 = function(s) {
-  var r = '';
-  if (!window.atob) return r;
+  if ((s == undefined) || !window.atob) return '';
+  var r;
   try {
     r = decodeURIComponent(Array.prototype.map.call(atob(s), function(c) {
       return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
@@ -3876,6 +4873,8 @@ util.encodeBSB64 = function(s, n) {
   return util.BSB64.encode(a, n);
 };
 util.decodeBSB64 = function(s, n) {
+  if (s == undefined) return '';
+  s = util.convertNewLine(s, '\n').replace(/\n/g, '');
   if (s.match(/\$\d+$/)) {
     var v = s.split('$');
     s = v[0];
@@ -3915,17 +4914,32 @@ util.RingBuffer = function(len) {
 };
 util.RingBuffer.prototype = {
   add: function(data) {
-    var idx = this.cnt % this.len;
-    this.buffer[idx] = data;
+    var i = this.cnt % this.len;
+    this.buffer[i] = data;
     this.cnt++;
   },
   set: function(idx, data) {
-    this.buffer[idx] = data;
+    var ctx = this;
+    var p;
+    if (idx < 0) {
+      idx *= -1;
+      if (((ctx.cnt < ctx.len) && (idx > ctx.cnt)) || ((ctx.cnt >= ctx.len) && (idx > ctx.len))) {
+        return;
+      }
+      p = ctx.cnt - idx;
+    } else {
+      if (((ctx.cnt < ctx.len) && (idx >= ctx.cnt)) || ((ctx.cnt >= ctx.len) && (idx >= ctx.len))) {
+        return;
+      }
+      p = ctx.cnt - ctx.len;
+      if (p < 0) p = 0;
+      p += idx;
+    }
+    var i = p % ctx.len;
+    ctx.buffer[i] = data;
   },
   get: function(idx) {
-    if (this.len < this.cnt) {
-      idx += this.cnt;
-    }
+    if (this.len < this.cnt) idx += this.cnt;
     idx %= this.len;
     return this.buffer[idx];
   },
@@ -3933,13 +4947,9 @@ util.RingBuffer.prototype = {
     var buf = [];
     var len = this.len;
     var pos = 0;
-    if (this.cnt > len) {
-      pos = (this.cnt % len);
-    }
+    if (this.cnt > len) pos = (this.cnt % len);
     for (var i = 0; i < len; i++) {
-      if (pos >= len) {
-        pos = 0;
-      }
+      if (pos >= len) pos = 0;
       if (this.buffer[pos] == undefined) {
         break;
       } else {
@@ -3962,25 +4972,349 @@ util.RingBuffer.prototype = {
 };
 
 //-----------------------------------------------------------------------------
+// Console
+//-----------------------------------------------------------------------------
+/**
+ * opt = {
+ *   bufsize: 10,
+ *   width: '500px',
+ *   height: '100px',
+ *   color: '#fff',
+ *   background: '#000',
+ *   border: '1px solid #888',
+ *   fontFamily: 'Consolas',
+ *   fontSize: '12px',
+ *   class: 'console1'
+ * }
+ */
+util.initConsole = function(el, opt) {
+  return new util.Console(el, opt);
+};
+util.Console = function(el, opt) {
+  var wrapper = util.getElement(el);
+  if (!opt) opt = {};
+  var bufsize = (opt.bufsize == undefined ? 1000 : opt.bufsize);
+  var fontFamily = (opt.fontFamily == undefined ? 'Consolas, Monaco, Menlo, monospace, sans-serif' : opt.fontFamily);
+
+  var pre = document.createElement('pre');
+  pre.width = '100%';
+  pre.height = '100%';
+  pre.style.margin = 0;
+  pre.style.padding = 0;
+  pre.style.fontFamily = fontFamily;
+  if (opt.color) pre.style.color = opt.color;
+  if (opt.fontSize) pre.style.fontSize = opt.fontSize;
+  if (opt.class) pre.className = opt.class;
+
+  wrapper.appendChild(pre);
+  wrapper.style.overflow = 'auto';
+  if (opt.width) wrapper.style.width = opt.width;
+  if (opt.height) wrapper.style.height = opt.height;
+  if (opt.background) wrapper.style.background = opt.background;
+  if (opt.border) wrapper.style.border = opt.border;
+  wrapper.addEventListener('scroll', this.onScroll, true);
+  wrapper.ctx = this;
+
+  this.wrapper = wrapper;
+  this.buf = new util.RingBuffer(bufsize);
+  this.pre = pre;
+  this.autoScroll = true;
+};
+util.Console.prototype = {
+  print: function(m, idx) {
+    var ctx = this;
+    idx |= 0;
+    if (idx == 0) {
+      ctx.buf.add(m);
+    } else {
+      if (idx > 0) idx--;
+      ctx.buf.set(idx, m);
+    }
+    ctx._print(ctx);
+  },
+  _print: function(ctx) {
+    var b = ctx.buf.getAll();
+    var s = '';
+    for (var i = 0; i < b.length; i++) {
+      s += b[i] + '\n';
+    }
+    ctx.pre.innerHTML = s;
+    if (ctx.autoScroll) ctx.toBottom();
+  },
+  write: function(m, n) {
+    var ctx = this;
+    ctx.buf.clear();
+    n |= 0;
+    var a = util.text2list(m);
+    if (n == 0) {
+      for (var i = 0; i < a.length; i++) {
+        ctx.buf.add(a[i]);
+      }
+    } else {
+      var s = '';
+      var st = a.length - n;
+      if (st < 0) st = 0;
+      var ed = st + n;
+      if (ed > a.length) ed = a.length;
+      for (i = st; i < ed; i++) {
+        s += a[i] + '\n';
+      }
+      ctx.buf.add(s);
+    }
+    ctx._print(ctx);
+  },
+  clear: function() {
+    var ctx = this;
+    ctx.buf.clear();
+    ctx._print(ctx);
+  },
+  copy: function() {
+    var s = this.getText();
+    util.copy(s);
+  },
+  getText: function(idx) {
+    var s = this.getHTML(idx);
+    return util.html2text(s);
+  },
+  getHTML: function(idx) {
+    idx |= 0;
+    var c = this.pre.innerHTML;
+    if (idx == 0) return c;
+    var a = util.text2list(c);
+    if (idx < 0) {
+      var i = a.length + idx;
+      return (i < 0 ? '' : a[i]);
+    }
+    idx--;
+    return (idx < a.length ? a[idx] : '');
+  },
+  toTop: function() {
+    this.wrapper.scrollTop = 0;
+  },
+  toRight: function() {
+    this.wrapper.scrollLeft = this.wrapper.scrollWidth;
+  },
+  toBottom: function() {
+    this.wrapper.scrollTop = this.wrapper.scrollHeight;
+  },
+  toLeft: function() {
+    this.wrapper.scrollLeft = 0;
+  },
+  scrollX: function(v) {
+    if (v == undefined) return this.wrapper.scrollLeft;
+    this.wrapper.scrollLeft = v;
+  },
+  scrollY: function(v) {
+    if (v == undefined) return this.wrapper.scrollTop;
+    this.wrapper.scrollTop = v;
+  },
+  onScroll: function(e) {
+    var ctx = e.target.ctx;
+    var rect = ctx.wrapper.getBoundingClientRect();
+    var h = rect.height;
+    var d = ctx.wrapper.scrollHeight - ctx.wrapper.scrollTop;
+    if ((d - 20 <= h) && (h <= d + 20)) {
+      ctx.autoScroll = true;
+    } else {
+      ctx.autoScroll = false;
+    }
+  }
+};
+
+//-----------------------------------------------------------------------------
+// Counter
+//-----------------------------------------------------------------------------
+/**
+ * opt = {
+ *   value: 0,
+ *   duration: 250,
+ *   format: true,
+ *   scale: 0,
+ *   prefix: 'String',
+ *   suffix: 'String',
+ *   text: 'String'
+ * }
+ */
+util.initCounter = function(el, opt) {
+  return new util.Counter(el, opt);
+};
+util.Counter = function(el, opt) {
+  var ctx = this;
+  el = util.getElement(el);
+  if (!opt) opt = {};
+  var v = (opt.value == undefined ? 0 : opt.value);
+  ctx.B = 250;
+  ctx.D = (opt.duration == undefined ? ctx.B : opt.duration);
+  ctx.R = 20;
+  ctx.el = el;
+  ctx.v = v;
+  ctx.v0 = v;
+  ctx.s = 0;
+  ctx.r = ctx.R;
+  ctx.fmt = (opt.format ? true : false);
+  ctx.scale = (opt.scale == undefined ? 0 : opt.scale);
+  ctx.pfx = (opt.prefix == undefined ? '' : opt.prefix);
+  ctx.sfx = (opt.suffix == undefined ? '' : opt.suffix);
+  ctx.tmrId = 0;
+  if (opt.text == undefined) {
+    ctx.print(ctx, v);
+  } else {
+    ctx._print(ctx, opt.text);
+  }
+};
+util.Counter.prototype = {
+  getValue: function() {
+    return this.v;
+  },
+  setValue: function(v) {
+    var ctx = this;
+    v = util.floor(parseFloat(v), ctx.scale);
+    ctx._stopTmr(ctx);
+    ctx.v = v;
+    var D = ctx.D;
+    var mf = 0;
+    if (D == 0) {
+      ctx.print(ctx, v);
+      return;
+    } else if (D < 0) {
+      mf = 1;
+      D *= (-1);
+    }
+    var d = v - ctx.v0;
+    var F = D / ctx.R;
+    ctx.r = ctx.R;
+    var a = Math.abs(d);
+    if ((a >= D) || (a >= F)) {
+      ctx.s = util.ceil(a / F, ctx.scale);
+      if (ctx.s % 10 == 0) {
+        if (ctx.scale > 0) {
+          ctx.s += parseFloat('0.' + util.repeatCh('0', ctx.scale - 1) + '1');
+        } else {
+          ctx.s++;
+        }
+      } else if (ctx.scale > 0) {
+        ctx.s += parseFloat('0.' + util.repeatCh('0', ctx.scale - 1) + '1');
+      }
+    } else {
+      if (ctx.scale > 0) {
+        ctx.s = parseFloat('1.' + util.repeatCh('0', ctx.scale - 1) + '1');
+      } else {
+        ctx.s = 1;
+      }
+      if (a < ctx.B) ctx.r = util.ceil(ctx.B / a, ctx.scale);
+    }
+    if (d < 0) ctx.s *= (-1);
+    if (mf) {
+      var t = (a < ctx.B ? ctx.B : D);
+      ctx.v0 = v;
+      ctx.tmrId = setTimeout(ctx.update, t, ctx);
+    } else {
+      ctx.update(ctx);
+    }
+  },
+  setDuration: function(d) {
+    this.D = d;
+    if (this.tmrId > 0) this.setValue(this.v);
+  },
+  up: function() {
+    var ctx = this;
+    var v = ctx.v;
+    if (ctx.scale == 0) {
+      v++;
+    } else {
+      v = util.decimalAlignment(v, ctx.scale).replace('.', '');
+      v = parseInt(v) + 1;
+      var s = v + '';
+      v = s.substr(0, s.length - ctx.scale) + '.' + s.slice(ctx.scale * (-1));
+    }
+    ctx.setValue(v);
+  },
+  down: function() {
+    var ctx = this;
+    var v = ctx.v;
+    if (ctx.scale == 0) {
+      v--;
+    } else {
+      v = util.decimalAlignment(v, ctx.scale).replace('.', '');
+      v = parseInt(v);
+      if (v <= 0) {
+        v = v * (-1) + 1;
+        var s = '-' + util.lpad(v, '0', ctx.scale);
+      } else {
+        v--;
+        s = v + '';
+      }
+      v = s.substr(0, s.length - ctx.scale) + '.' + s.slice(ctx.scale * (-1));
+    }
+    ctx.setValue(v);
+  },
+  setText: function(s) {
+    var ctx = this;
+    ctx._stopTmr(ctx);
+    ctx._print(ctx, s);
+  },
+  update: function(ctx) {
+    ctx.tmrId = 0;
+    var v = ctx.v0;
+    v += ctx.s;
+    v = util.round(v, ctx.scale);
+    var c = true;
+    if (((ctx.s >= 0) && (v > ctx.v)) || ((ctx.s < 0) && (v < ctx.v))) {
+      v = ctx.v;
+      c = false;
+    }
+    ctx.v0 = v;
+    ctx.print(ctx, v);
+    if (c) ctx.tmrId = setTimeout(ctx.update, ctx.r, ctx);
+  },
+  print: function(ctx, v) {
+    if (ctx.scale > 0) v = util.decimalPadding(v, ctx.scale);
+    if (ctx.fmt && ((v >= 1000) || (v <= 1000))) v = util.formatNumber(v);
+    v = ctx.pfx + v + ctx.sfx;
+    ctx._print(ctx, v);
+  },
+  _print: function(ctx, v) {
+    ctx.el.innerHTML = v;
+  },
+  _stopTmr: function(ctx) {
+    if (ctx.tmrId > 0) {
+      clearTimeout(ctx.tmrId);
+      ctx.tmrId = 0;
+    }
+  }
+};
+
+//-----------------------------------------------------------------------------
 // Interval Proc
 //-----------------------------------------------------------------------------
-// {
+// Start  : util.IntervalProc.start('<PROC_ID>', fn, 1000, ARG, [async(true|false)]);
+// Stop   : util.IntervalProc.stop('<PROC_ID>');
+// Restart: util.IntervalProc.start('<PROC_ID>');
+//
+// Async:
+// -> call in fn: util.IntervalProc.next('<PROC_ID>');
+//-----------------------------------------------------------------------------
+util.IntervalProc = {};
+
+// proc = {
 //   id: {
 //     fn: function(),
 //     interval: millis,
+//     arg: argument for fn,
 //     async: true|false,
 //     tmrId: timer-id
 //   }
 // }
-util.intervalProcs = {};
+util.IntervalProc.procs = {};
 
 /**
  * Register an interval proc.
  */
-util.registerIntervalProc = function(id, fn, interval, async) {
-  util.intervalProcs[id] = {
+util.IntervalProc.register = function(id, fn, interval, arg, async) {
+  util.IntervalProc.procs[id] = {
     fn: fn,
     interval: interval,
+    arg: arg,
     async: (async ? true : false),
     tmrId: 0
   };
@@ -3989,30 +5323,30 @@ util.registerIntervalProc = function(id, fn, interval, async) {
 /**
  * Remove an interval proc.
  */
-util.removeIntervalProc = function(id) {
-  delete util.intervalProcs[id];
+util.IntervalProc.remove = function(id) {
+  delete util.IntervalProc.procs[id];
 };
 
 /**
  * Start an interval proc.
  */
-util.startIntervalProc = function(id, fn, interval, async) {
-  if (fn) util.registerIntervalProc(id, fn, interval, async);
-  var p = util.intervalProcs[id];
+util.IntervalProc.start = function(id, fn, interval, arg, async) {
+  if (fn) util.IntervalProc.register(id, fn, interval, arg, async);
+  var p = util.IntervalProc.procs[id];
   if (p) {
-    util._stopIntervalProc(p);
-    util.execIntervalProc(id);
+    util.IntervalProc._stop(p);
+    util.IntervalProc.exec(id);
   }
 };
 
 /**
  * Stop an interval proc.
  */
-util.stopIntervalProc = function(id) {
-  var p = util.intervalProcs[id];
-  if (p) util._stopIntervalProc(p);
+util.IntervalProc.stop = function(id) {
+  var p = util.IntervalProc.procs[id];
+  if (p) util.IntervalProc._stop(p);
 };
-util._stopIntervalProc = function(p) {
+util.IntervalProc._stop = function(p) {
   if (p.tmrId > 0) {
     clearTimeout(p.tmrId);
     p.tmrId = 0;
@@ -4020,34 +5354,38 @@ util._stopIntervalProc = function(p) {
 };
 
 /**
- * Execute an interval proc.
- */
-util.execIntervalProc = function(id) {
-  var p = util.intervalProcs[id];
-  if (p) {
-    p.fn();
-    if (!p.async) util.nextIntervalProc(id);
-  }
-};
-
-/**
  * Sets a timer which executes an intefval proc function.
  */
-util.nextIntervalProc = function(id, interval) {
-  var p = util.intervalProcs[id];
+util.IntervalProc.next = function(id, interval) {
+  var p = util.IntervalProc.procs[id];
   if (p) {
-    util._stopIntervalProc(p);
+    util.IntervalProc._stop(p);
     if (interval == undefined) interval = p.interval;
-    p.tmrId = setTimeout(util.execIntervalProc, interval, id);
+    p.tmrId = setTimeout(util.IntervalProc.exec, interval, id);
   }
 };
 
 /**
  * Sets interval in milliseconds.
  */
-util.setInterval = function(id, interval) {
-  var p = util.intervalProcs[id];
+util.IntervalProc.setInterval = function(id, interval) {
+  var p = util.IntervalProc.procs[id];
   if (p) p.interval = interval;
+};
+
+/**
+ * Execute an interval proc.
+ */
+util.IntervalProc.exec = function(id) {
+  var p = util.IntervalProc.procs[id];
+  if (p) {
+    p.fn(p.arg);
+    if (!p.async) util.IntervalProc.next(id);
+  }
+};
+
+util.IntervalProc.ids = function() {
+  return util.objKeys(util.IntervalProc.procs);
 };
 
 //-----------------------------------------------------------------------------
@@ -4059,9 +5397,7 @@ util.setInterval = function(id, interval) {
 //
 // util.event.addListener('EVENT_NAME', NAMESPACE.cb);
 //
-// var data = {
-//   msg: 'abc'
-// };
+// var data = {msg: 'abc'};
 // util.event.send('EVENT_NAME', data);
 //-----------------------------------------------------------------------------
 util.event = {};
@@ -4069,45 +5405,28 @@ util.event.listeners = {};
 util.event.events = [];
 
 util.event.addListener = function(name, fn) {
-  if (!util.event.listeners[name]) {
-    util.event.listeners[name] = [];
-  }
-  util.addListener(util.event.listeners[name], fn);
+  if (!util.event.listeners[name]) util.event.listeners[name] = [];
+  util.addListItem(util.event.listeners[name], fn);
 };
 
 util.event.removeListener = function(name, fn) {
-  util.removeListener(util.event.listeners[name], fn);
+  util.removeListItem(util.event.listeners[name], fn);
 };
 
 util.event.send = function(name, data) {
-  var e = {
-    name: name,
-    data: data
-  };
+  var e = {name: name, data: data};
   util.event.events.push(e);
   setTimeout(util.event._send, 0);
 };
 
 util.event._send = function() {
   var ev = util.event.events.shift();
-  if (!ev) {
-    return;
-  }
-
-  var e = {
-    name: ev.name,
-    data: ev.data
-  };
-
+  if (!ev) return;
+  var e = {name: ev.name, data: ev.data};
   var listeners = util.event.listeners[ev.name];
-  if (listeners) {
-    util.event.callListeners(listeners, e);
-  }
-
+  if (listeners) util.event.callListeners(listeners, e);
   listeners = util.event.listeners['*'];
-  if (listeners) {
-    util.event.callListeners(listeners, e);
-  }
+  if (listeners) util.event.callListeners(listeners, e);
 };
 
 util.event.callListeners = function(listeners, e) {
@@ -4132,9 +5451,7 @@ util.geo.cbOK = null;
 util.geo.cbERR = null;
 
 util.geo.getPosition = function(cbOK, cbERR, opt) {
-  if (!opt) {
-    opt = util.geo.DFLT_OPT;
-  }
+  if (!opt) opt = util.geo.DFLT_OPT;
   util.geo.cbOK = cbOK;
   util.geo.cbERR = cbERR;
   navigator.geolocation.getCurrentPosition(util.geo.onGetPosOK, util.geo.onGetPosERR, opt);
@@ -4161,22 +5478,16 @@ util.geo.onGetPosOK = function(pos) {
     'speed_kmh': kmh
   };
 
-  if (util.geo.cbOK) {
-    util.geo.cbOK(data);
-  }
+  if (util.geo.cbOK) util.geo.cbOK(data);
 };
 
 util.geo.onGetPosERR = function(err) {
-  if (util.geo.cbERR) {
-    util.geo.cbERR(err);
-  }
+  if (util.geo.cbERR) util.geo.cbERR(err);
 };
 
 util.geo.startWatchPosition = function(cbOK, cbERR, opt) {
   if (util.geo.watchId != null) return;
-  if (!opt) {
-    opt = util.geo.DFLT_OPT;
-  }
+  if (!opt) opt = util.geo.DFLT_OPT;
   util.geo.cbOK = cbOK;
   util.geo.cbERR = cbERR;
   util.geo.watchId = navigator.geolocation.watchPosition(util.geo.onGetPosOK, util.geo.onGetPosERR, opt);
@@ -4192,20 +5503,13 @@ util.geo.stopWatchPosition = function() {
 };
 
 // '35.681237, 139.766985'
-// ->
-// {
-//   'latitude': 35.681237,
-//   'longitude': 139.766985
-// }
+// -> {'latitude': 35.681237, 'longitude': 139.766985}
 util.parseCoordinate = function(location) {
   location = location.replace(/ /g, '');
   var loc = location.split(',');
   var lat = parseFloat(loc[0]);
   var lon = parseFloat(loc[1]);
-  var coordinate = {
-    'latitude': lat,
-    'longitude': lon
-  };
+  var coordinate = {'latitude': lat, 'longitude': lon};
   return coordinate;
 };
 
@@ -4242,22 +5546,13 @@ util.isForwardMovement = function(azimuth, heading, range) {
   heading = util.roundAngle(heading);
   range = util.roundAngle(range);
   var rangeL = heading - (range / 2);
-  if (rangeL < 0) {
-    rangeL += 360;
-  }
+  if (rangeL < 0) rangeL += 360;
   var rangeR = heading + (range / 2);
-  if (rangeR >= 360) {
-    rangeR -= 360;
-  }
-
+  if (rangeR >= 360) rangeR -= 360;
   if (rangeR < rangeL) {
-    if ((azimuth >= rangeL) || (azimuth <= rangeR)) {
-      return true;
-    }
+    if ((azimuth >= rangeL) || (azimuth <= rangeR)) return true;
   } else {
-    if ((azimuth >= rangeL) && (azimuth <= rangeR)) {
-      return true;
-    }
+    if ((azimuth >= rangeL) && (azimuth <= rangeR)) return true;
   }
   return false;
 };
@@ -4273,26 +5568,16 @@ util.onMouseMove = function(e) {
 };
 
 //-----------------------------------------------------------------------------
-util.keyHandlers = {
-  down: [],
-  press: [],
-  up: []
-};
+util.keyHandlers = {down: [], press: [], up: []};
 
-// combination = {
-//   ctrl: true
-// }
-// 'down', 83, fn, combination
-// fn(e)
+/**
+ * fn = function(e) {};
+ * combination = {ctrl: true, shift: false, alt: false, meta: false};
+ * addKeyHandler('down', 83, fn, combination);
+ */
 util.addKeyHandler = function(type, keyCode, fn, combination) {
-  if ((type != 'down') && (type != 'press') && (type != 'up')) {
-    return;
-  }
-  var handler = {
-    keyCode: keyCode,
-    combination: combination,
-    fn: fn
-  };
+  if ((type != 'down') && (type != 'press') && (type != 'up')) return;
+  var handler = {keyCode: keyCode, combination: combination, fn: fn};
   util.keyHandlers[type].push(handler);
 };
 
@@ -4329,6 +5614,180 @@ util.isTargetKey = function(e, handler) {
       return true;
     }
   }
+  return false;
+};
+
+//-----------------------------------------------------------------------------
+/**
+ * cb = function(data, file)
+ * opt = {
+ *   mode: 'txt'|'b64'|'data'|'bin'|'blob'([object ArrayBuffer])
+ *   onloadstart: function(file),
+ *   onprogress: function(e, loaded, total, pct),
+ *   onload: function(data, file),
+ *   onabort: function(),
+ *   onerror: function(e) {
+ *     e.target.error.code:
+ *       e.target.error.NOT_FOUND_ERR
+ *       e.target.error.SECURITY_ERR
+ *       e.target.error.NOT_READABLE_ERR
+ *       e.target.error.ABORT_ERR
+ *   }
+ * };
+ */
+util.addDndHandler = function(el, cb, opt) {
+  el = util.getElement(el);
+  if (!el) return;
+  el.addEventListener('dragover', util.dnd.onDragOver, false);
+  el.addEventListener('drop', util.dnd.onDrop, false);
+  var o = new util.DndHandler(el, cb, opt);
+  util.dnd.handlers.push(o);
+  return o;
+};
+util.DndHandler = function(el, cb, opt) {
+  if (!opt) opt = {};
+  this.el = el;
+  this.cb = cb;
+  this.mode = opt.mode;
+  this.onloadstart = opt.onloadstart;
+  this.onprogress = opt.onprogress;
+  this.onload = opt.onload;
+  this.onabort = opt.onabort;
+  this.onerror = opt.onerror;
+};
+util.DndHandler.prototype = {
+  setMode: function(mode) {
+    this.mode = mode;
+  }
+};
+
+util.dnd = {};
+util.dnd.handlers = [];
+util.fileLoader = null;
+util.dnd.onDragOver = function(e) {
+  e.stopPropagation();
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+};
+util.dnd.onDrop = function(e) {
+  e.stopPropagation();
+  e.preventDefault();
+  var handlers = util.dnd.handlers;
+  var handler = null;
+  for (var i = 0; i < handlers.length; i++) {
+    handler = handlers[i];
+    if (util.isTargetEl(handler.el, e.target)) break;
+  }
+  if (i == handlers) return;
+  var cb = handler.cb;
+  var d = e.dataTransfer.getData('text');
+  if (d) {
+    if (cb) cb(d);
+  } else {
+    util.dnd.handleDroppedFile(e, handler);
+  }
+};
+
+util.dnd.handleDroppedFile = function(e, handler) {
+  try {
+    if (!e.dataTransfer.files) return;
+    if (e.dataTransfer.files.length > 0) {
+      var f = e.dataTransfer.files[0];
+      if (f) util.loadFile(f, handler);
+    } else {
+      if (handler.cb) handler.cb('');
+    }
+  } catch (e) {}
+};
+
+util.loadFile = function(file, handler) {
+  if (file.size == 0) return;
+  var fr = new FileReader();
+  fr.onload = util.onFileLoaded;
+  fr.onloadstart = util.onFileLoadStart;
+  fr.onprogress = util.onFileLoadProg;
+  fr.onabort = util.onFileLoadAbort;
+  fr.onerror = util.onFileLoadError;
+  util.fileLoader = {file: file, reader: fr, handler: handler};
+  var mode = handler.mode;
+  if ((mode == 'bin') || (mode == 'blob')) {
+    fr.readAsArrayBuffer(file);
+  } else if ((mode == 'b64') || (mode == 'data')) {
+    fr.readAsDataURL(file);
+  } else {
+    fr.readAsText(file);
+  }
+};
+
+util.onFileLoadStart = function() {
+  var loader = util.fileLoader;
+  var file = loader.file;
+  var cb = util.fileLoader.handler.onloadstart;
+  if (cb) cb(file);
+};
+
+util.onFileLoadProg = function(e) {
+  if (e.lengthComputable) {
+    var total = e.total;
+    var loaded = e.loaded;
+    var pct = (total == 0) ? 100 : Math.round((loaded / total) * 100);
+  }
+  var cb = util.fileLoader.handler.onprogress;
+  if (cb) cb(e, loaded, total, pct);
+};
+
+util.onFileLoaded = function() {
+  var loader = util.fileLoader;
+  var fr = loader.reader;
+  var file = loader.file;
+  var content = '';
+  try {
+    if (fr.result != null) content = fr.result;
+  } catch (e) {}
+  var handler = loader.handler;
+
+  var mode = handler.mode;
+  if (mode == 'b64') {
+    content = util.getDataUrlBody(content);
+  } else if (mode == 'bin') {
+    content = new Uint8Array(content);
+  }
+
+  var cb = util.fileLoader.handler.onload;
+  if (!cb) cb = handler.cb;
+  if (cb) cb(content, file);
+  util.finalizeFileLoad();
+};
+
+util.onFileLoadAbort = function() {
+  var cb = util.fileLoader.handler.onabort;
+  if (cb) cb();
+  util.finalizeFileLoad();
+};
+
+util.onFileLoadError = function(e) {
+  var cb = util.fileLoader.handler.onerror;
+  if (cb) cb(e);
+  util.finalizeFileLoad();
+};
+
+util.finalizeFileLoad = function() {
+  util.fileLoader = null;
+};
+
+util.getDataUrlBody = function(d) {
+  return d.split(',')[1];
+};
+
+util.decodeDataUrl = function(d) {
+  return util.decodeBase64(util.getDataUrlBody(d));
+};
+
+util.isTargetEl = function(el, tgt) {
+  do {
+    if (el == tgt) return true;
+    el = el.parentNode;
+  } while (el != null);
   return false;
 };
 
@@ -4445,12 +5904,33 @@ util.$onScroll = function(e) {
 };
 
 //-----------------------------------------------------------------------------
+var $dbg = {};
+util.debug = 0;
+
+util.objKeys = function(o) {
+  var a = [];
+  for (var k in o) {
+    a.push(k);
+  }
+  return a;
+};
+
+util.getElRelObj = function(objs, el) {
+  if (!el) return null;
+  for (var k in objs) {
+    var o = objs[k];
+    if (o.el == el) return o;
+  }
+  return null;
+};
+
+util.nop = function() {};
+
+//-----------------------------------------------------------------------------
 util.init = function() {
   util.setupLogs();
   try {
-    if (typeof window.localStorage != 'undefined') {
-      util.LS_AVAILABLE = true;
-    }
+    if (typeof window.localStorage != 'undefined') util.LS_AVAILABLE = true;
   } catch (e) {}
   window.addEventListener('DOMContentLoaded', util.onReady, true);
   window.addEventListener('mousemove', util.onMouseMove, true);

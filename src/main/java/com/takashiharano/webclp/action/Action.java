@@ -15,22 +15,26 @@ public abstract class Action {
   }
 
   private static Action getActionInstance(String actionName) {
-    String basePkgName = AppManager.getBasePackageName();
-    String pkgName = basePkgName + ".action";
-    String[] packages = { "", "system" };
+    String appBasePkgName = AppManager.getBasePackageName();
+    String actionPkgName = appBasePkgName + ".action";
 
     actionName = actionName.substring(0, 1).toUpperCase() + actionName.substring(1);
-    for (int i = 0; i < packages.length; i++) {
-      String subPackage = packages[i];
-      if (!subPackage.equals("")) {
-        subPackage += ".";
-      }
-      String classFullName = pkgName + "." + subPackage + actionName + "Action";
-      Action action = getBean(classFullName);
+    String classFullName = actionPkgName + "." + actionName + "Action";
+    Action action = getBean(classFullName);
+    if (action != null) {
+      return action;
+    }
+
+    String[] subPackages = { "system" };
+    for (int i = 0; i < subPackages.length; i++) {
+      String subPkgName = subPackages[i];
+      classFullName = actionPkgName + "." + subPkgName + "." + actionName + "Action";
+      action = getBean(classFullName);
       if (action != null) {
         return action;
       }
     }
+
     return null;
   }
 

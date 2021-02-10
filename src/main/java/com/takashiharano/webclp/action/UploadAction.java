@@ -7,7 +7,6 @@ import javax.servlet.http.Part;
 
 import com.takashiharano.util.FileUtil;
 import com.takashiharano.webclp.AppManager;
-import com.takashiharano.webclp.Config;
 import com.takashiharano.webclp.ProcessContext;
 
 public class UploadAction extends Action {
@@ -21,7 +20,7 @@ public class UploadAction extends Action {
       if (name.equals("files")) {
         String fileName = getFilename(part);
         if ((fileName != null) && !fileName.equals("")) {
-          String uploadDir = AppManager.getAppHome() + "/" + Config.getValue("upload_dir");
+          String uploadDir = AppManager.getAppHome() + "/" + AppManager.getConfigValue("upload_dir");
           FileUtil.mkdir(uploadDir);
           String filePath = uploadDir + "/" + fileName;
           part.write(filePath);

@@ -8,16 +8,20 @@ import java.util.Properties;
 import com.takashiharano.util.Log;
 
 public class Config {
-  private static Properties properties;
+  private Properties properties;
 
-  public static void load(String fipePath) throws Exception {
+  public Config(String fipePath) {
+    load(fipePath);
+  }
+
+  private void load(String fipePath) {
     Log.i("config load: " + fipePath);
     properties = new Properties();
     try (FileInputStream fis = new FileInputStream(fipePath)) {
       properties.load(fis);
     } catch (IOException ioe) {
       String message = "Failed to load properties: " + fipePath;
-      throw new Exception(message, ioe);
+      throw new RuntimeException(message, ioe);
     }
   }
 
@@ -28,20 +32,44 @@ public class Config {
    * property is not found.
    *
    * @param key
-   * @return
+   * @return the value in this property list with the specified key value.
    */
-  public static String getValue(String key) {
+  public String getValue(String key) {
     String value = properties.getProperty(key);
     return value;
   }
 
-  public static int getIntValue(String key) {
+  public String getValue(String key, String defaultValue) {
+    String value = properties.getProperty(key);
+    if (value == null) {
+      value = defaultValue;
+    }
+    return value;
+  }
+
+  /**
+   * Returns the integer value.
+   *
+   * @param key
+   *          key
+   * @return the value in this property list with the specified key value.
+   */
+  public int getIntValue(String key) {
     String value = getValue(key);
     int v = Integer.parseInt(value);
     return v;
   }
 
-  public static int getIntValue(String key, int defaultValue) {
+  /**
+   * Returns the integer value.
+   *
+   * @param key
+   *          key
+   * @param defaultValue
+   *          the value if specified key is not found
+   * @return the value in this property list with the specified key value.
+   */
+  public int getIntValue(String key, int defaultValue) {
     try {
       return getIntValue(key);
     } catch (Exception e) {
@@ -49,13 +77,29 @@ public class Config {
     }
   }
 
-  public static long getLongValue(String key) {
+  /**
+   * Returns the long value.
+   *
+   * @param key
+   *          key
+   * @return the value in this property list with the specified key value.
+   */
+  public long getLongValue(String key) {
     String value = getValue(key);
     long v = Long.parseLong(value);
     return v;
   }
 
-  public static long getLongValue(String key, long defaultValue) {
+  /**
+   * Returns the long value.
+   *
+   * @param key
+   *          key
+   * @param defaultValue
+   *          the value if specified key is not found
+   * @return the value in this property list with the specified key value.
+   */
+  public long getLongValue(String key, long defaultValue) {
     try {
       return getLongValue(key);
     } catch (Exception e) {
@@ -63,13 +107,29 @@ public class Config {
     }
   }
 
-  public static float getFloatValue(String key) {
+  /**
+   * Returns the float value.
+   *
+   * @param key
+   *          key
+   * @return the value in this property list with the specified key value.
+   */
+  public float getFloatValue(String key) {
     String value = getValue(key);
     float v = Float.parseFloat(value);
     return v;
   }
 
-  public static float getFloatValue(String key, float defaultValue) {
+  /**
+   * Returns the float value.
+   *
+   * @param key
+   *          key
+   * @param defaultValue
+   *          the value if specified key is not found
+   * @return the value in this property list with the specified key value.
+   */
+  public float getFloatValue(String key, float defaultValue) {
     try {
       return getFloatValue(key);
     } catch (Exception e) {
@@ -77,13 +137,29 @@ public class Config {
     }
   }
 
-  public static double getDoubleValue(String key) {
+  /**
+   * Returns the double value.
+   *
+   * @param key
+   *          key
+   * @return the value in this property list with the specified key value.
+   */
+  public double getDoubleValue(String key) {
     String value = getValue(key);
     double v = Double.parseDouble(value);
     return v;
   }
 
-  public static double getDoubleValue(String key, double defaultValue) {
+  /**
+   * Returns the double value.
+   *
+   * @param key
+   *          key
+   * @param defaultValue
+   *          the value if specified key is not found
+   * @return the value in this property list with the specified key value.
+   */
+  public double getDoubleValue(String key, double defaultValue) {
     try {
       return getDoubleValue(key);
     } catch (Exception e) {
@@ -91,16 +167,32 @@ public class Config {
     }
   }
 
-  public static boolean getBooleanValue(String key) {
+  /**
+   * Returns the boolean value.
+   *
+   * @param key
+   *          key
+   * @return the value in this property list with the specified key value.
+   */
+  public boolean getBooleanValue(String key) {
     return getBooleanValue(key, "true");
   }
 
-  public static boolean getBooleanValue(String key, String trueValue) {
+  /**
+   * Returns the boolean value.
+   *
+   * @param key
+   *          key
+   * @param defaultValue
+   *          the value if specified key is not found
+   * @return the value in this property list with the specified key value.
+   */
+  public boolean getBooleanValue(String key, String trueValue) {
     String value = getValue(key);
     return trueValue.equals(value);
   }
 
-  public static void dumpAllProperties() {
+  public void dumpAllProperties() {
     Enumeration<?> nanmes = properties.propertyNames();
     while (nanmes.hasMoreElements()) {
       String name = (String) nanmes.nextElement();

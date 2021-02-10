@@ -2,13 +2,12 @@ package com.takashiharano.webclp.logic;
 
 import com.takashiharano.util.FileUtil;
 import com.takashiharano.webclp.AppManager;
-import com.takashiharano.webclp.Config;
 import com.takashiharano.webclp.ProcessContext;
 
 public class DeleteFileLogic {
 
   public void process(ProcessContext context, String fileName) throws Exception {
-    String uploadDir = AppManager.getAppHome() + "/" + Config.getValue("upload_dir");
+    String uploadDir = AppManager.getAppHome() + "/" + AppManager.getConfigValue("upload_dir");
     if ("*".equals(fileName)) {
       deleteAll(uploadDir);
     } else {
