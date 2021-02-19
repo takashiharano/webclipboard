@@ -5,7 +5,7 @@
  * https://github.com/takashiharano/util
  */
 var util = util || {};
-util.v = '202102090000';
+util.v = '202102150000';
 
 util.DFLT_FADE_SPEED = 500;
 util.LS_AVAILABLE = false;
@@ -219,13 +219,6 @@ util._serializeDateTimeString = function(s) {
 };
 
 /**
- * Returns current timestamp
- */
-util.now = function() {
-  return new Date().getTime();
-};
-
-/**
  * 20200920T123456
  * 20200920T123456+0900
  * 20200920T123456.789
@@ -430,7 +423,7 @@ util.getTzLocalOffset = function(tz) {
  */
 util.difftime = function(t0, t1) {
   t0 = util.unixmillis(t0);
-  t1 = (t1 == undefined ? util.now() : util.unixmillis(t1));
+  t1 = (t1 == undefined ? Date.now() : util.unixmillis(t1));
   return t1 - t0;
 };
 
@@ -457,7 +450,7 @@ util.diffDays = function(ms1, ms2, abs) {
  * total: total value
  */
 util.calcETC = function(t0, val, total, now) {
-  if (now == undefined) now = util.now();
+  if (now == undefined) now = Date.now();
   var dt = now - t0;
   var avg = dt / val;
   var tt = Math.ceil(avg * total);
@@ -728,7 +721,7 @@ util.timecounter.ids = function() {
 util.TimeCounter = function(el, t0, opt) {
   if (!opt) opt = {};
   this.el = el;
-  this.t0 = (t0 == undefined ? util.now() : t0);
+  this.t0 = (t0 == undefined ? Date.now() : t0);
   this.interval = (opt.interval == undefined ? 500 : opt.interval);
   this.mode = (opt.mode == undefined ? 1 : opt.mode);
   this.signed = opt.signed;
@@ -743,8 +736,7 @@ util.TimeCounter.prototype = {
     util.IntervalProc.start(ctx.id, ctx.update, ctx.interval, ctx);
   },
   update: function(ctx) {
-    var now = new Date().getTime();
-    var v = now - ctx.t0;
+    var v = Date.now() - ctx.t0;
     var el = util.getElement(ctx.el);
     if (el) el.innerHTML = util.ms2str(v, ctx.mode, ctx.signed);
     if (ctx.cb) ctx.cb(v);
@@ -814,7 +806,7 @@ util.Clock.prototype = {
   update: function(ctx) {
     var el = util.getElement(ctx.el);
     if (el) {
-      var t = new Date().getTime();
+      var t = Date.now();
       t += ctx.offset;
       el.innerHTML = new util.DateTime(t, ctx.tz).toString(ctx.fmt);
     }
@@ -861,10 +853,10 @@ util.ClockTime.prototype = {
   toString: function(fmt) {
     if (!fmt) fmt = '%H:%m:%S.%s';
     var byTheDay = fmt.match(/%d/) != null;
-    var hr = this.toHrStr(byTheDay);
-    var mi = this.toMinStr(byTheDay);
-    var ss = this.toSecStr(byTheDay);
-    var ms = this.toMilliSecStr(byTheDay);
+    var hr = this.toHrString(byTheDay);
+    var mi = this.toMinString(byTheDay);
+    var ss = this.toSecString(byTheDay);
+    var ms = this.toMilliSecString(byTheDay);
     if ((this.millis < 0) && !byTheDay) hr = '-' + hr;
     var r = fmt;
     r = r.replace(/%H/, hr);
@@ -872,48 +864,33 @@ util.ClockTime.prototype = {
     r = r.replace(/%S/, ss);
     r = r.replace(/%s/, ms);
     if (byTheDay) {
-      var d = this.toDaysStr();
+      var d = this.toDaysString();
       r = r.replace(/%d/, d);
     }
     return r;
   },
-  toDaysStr: function() {
-    var days;
-    if (this.millis < 0) {
-      days = '-';
-    } else {
-      days = '+';
-    }
+  toDaysString: function() {
+    var days = ((this.millis < 0) ? '-' : '+');
     days += this.days + ' ' + util.plural('Day', this.days, true);
     return days;
   },
-  toHrStr: function(byTheDay) {
-    var h;
-    var hh;
+  toHrString: function(byTheDay) {
     if (byTheDay === undefined) {
       byTheDay = false;
     }
-    if (byTheDay) {
-      h = this.clockTm['hrs'];
-    } else {
-      h = this.tm['hours'];
-    }
-    if (h < 10) {
-      hh = ('0' + h).slice(-2);
-    } else {
-      hh = h + '';
-    }
+    var h = (byTheDay ? this.clockTm['hrs'] : this.tm['hours']);
+    var hh = ((h < 10) ? ('0' + h).slice(-2) : h + '');
     return hh;
   },
-  toMinStr: function(byTheDay) {
+  toMinString: function(byTheDay) {
     var st = (byTheDay ? this.clockTm : this.tm);
     return ('0' + st['minutes']).slice(-2);
   },
-  toSecStr: function(byTheDay) {
+  toSecString: function(byTheDay) {
     var st = (byTheDay ? this.clockTm : this.tm);
     return ('0' + st['seconds']).slice(-2);
   },
-  toMilliSecStr: function(byTheDay) {
+  toMilliSecString: function(byTheDay) {
     var st = (byTheDay ? this.clockTm : this.tm);
     return ('00' + (st['milliseconds'] | 0)).slice(-3);
   }
@@ -1044,28 +1021,35 @@ util.clock2ms = function(str) {
 };
 
 //-----------------------------------------------------------------------------
-// ['0000', '12:00', '1530'] ->
-// {
-//   time: '12:00',
-//   datetime: DateTime object
-// }
-util.calcNextTime = function(times) {
-  var now = util.getDateTime();
-  times.sort();
-  var ret = {time: null, datetime: null};
+// ['0000', '1200', '1530']
+// ['T0000', 'T1200', 'T1530']
+// ['00:00', '12:00', '15:30']
+// -> {time: '1200', datetime: DateTime object}
+util.calcNextTime = function(times, dfltS) {
+  var now = Date.now();
+  var tList = [];
   for (var i = 0; i < times.length; i++) {
-    var t = times[i];
-    t = t.replace(/T/, '').replace(/:/g, '');
-    var tmstr = t.substr(0, 2) + t.substr(2, 2) + '5959.999';
+    var t = times[i].replace(/T/, '').replace(/:/g, '');
+    tList.push(t);
+  }
+  tList.sort();
+  var ret = {time: null, datetime: null};
+  for (i = 0; i < tList.length; i++) {
+    t = tList[i];
+    var h = t.substr(0, 2);
+    var m = t.substr(2, 2);
+    var s = t.substr(4, 2);
+    if (s == '') s = ((dfltS == undefined) ? '59' : dfltS);
+    var tmstr = h + m + s + '.999';
     var tgt = util.getDateTimeFromTime(tmstr);
-    if (now.timestamp <= tgt.timestamp) {
-      ret.time = times[i];
+    if (now <= tgt.timestamp) {
+      ret.time = tList[i];
       ret.datetime = tgt;
       return ret;
     }
   }
-  ret.time = times[0];
-  ret.datetime = util.getDateTimeFromTime(times[0], 1);
+  ret.time = tList[0];
+  ret.datetime = util.getDateTimeFromTime(tList[0], 1);
   return ret;
 };
 
@@ -1076,23 +1060,23 @@ util.calcNextTime = function(times) {
  * 12345, -1  -> 12350
  * 12345, -2-  > 12300
  */
-util.round = function(number, scale) {
-  return util._shift(Math.round(util._shift(number, scale, false)), scale, true);
+util.round = function(num, scale) {
+  return util._shift(Math.round(util._shift(num, scale, false)), scale, true);
 };
 
-util.floor = function(number, scale) {
-  return util._shift(Math.floor(util._shift(number, scale, false)), scale, true);
+util.floor = function(num, scale) {
+  return util._shift(Math.floor(util._shift(num, scale, false)), scale, true);
 };
 
-util.ceil = function(number, scale) {
-  return util._shift(Math.ceil(util._shift(number, scale, false)), scale, true);
+util.ceil = function(num, scale) {
+  return util._shift(Math.ceil(util._shift(num, scale, false)), scale, true);
 };
 
-util._shift = function(number, scale, reverseShift) {
+util._shift = function(num, scale, reverseShift) {
   if (scale == undefined) scale = 0;
   if (reverseShift) scale = -scale;
-  var numArray = ('' + number).split('e');
-  return +(numArray[0] + 'e' + (numArray[1] ? (+numArray[1] + scale) : scale));
+  var a = ('' + num).split('e');
+  return +(a[0] + 'e' + (a[1] ? (+a[1] + scale) : scale));
 };
 
 // 123   , 1 -> '123.0'
@@ -1106,8 +1090,7 @@ util.decimalAlignment = function(v, scale, type, zero) {
   if (!f) f = F[0];
   v = f(v, scale);
   if (zero && v == 0) return 0;
-  v = util.decimalPadding(v, scale);
-  return v;
+  return util.decimalPadding(v, scale);
 };
 
 // 123  , 1 -> '123.0'
@@ -1122,17 +1105,16 @@ util.decimalPadding = function(v, scale) {
   var i = w[0];
   var d = (w[1] == undefined ? '' : w[1]);
   d = util.rpad(d, '0', scale);
-  r = i + '.' + d;
-  return r;
+  return (i + '.' + d);
 };
 
 /**
- * true:
- *  '1'
- *  '1.0'
- * false:
- *  '1.2'
- *  'a'
+ * '1'
+ * '1.0'
+ * -> true
+ * '1.2'
+ * 'a'
+ * -> false
  */
 util.isInteger = function(v, strict) {
   if (strict && (typeof v != 'number')) return false;
@@ -1195,9 +1177,7 @@ util.randomString = function(a1, a2, a3) {
       max = a2;
     }
   }
-  if (typeof a3 == 'number') {
-    max = a3;
-  }
+  if (typeof a3 == 'number') max = a3;
   if (!tbl) tbl = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   if (typeof tbl == 'string') tbl = tbl.split('');
   if (min == -1) min = DFLT_LEN;
@@ -1236,15 +1216,11 @@ util.loadObject = function(key) {
 };
 
 util.saveObject = function(key, obj) {
-  if (util.LS_AVAILABLE) {
-    localStorage.setItem(key, JSON.stringify(obj));
-  }
+  if (util.LS_AVAILABLE) localStorage.setItem(key, JSON.stringify(obj));
 };
 
 util.clearObject = function(key) {
-  if (util.LS_AVAILABLE) {
-    localStorage.removeItem(key);
-  }
+  if (util.LS_AVAILABLE) localStorage.removeItem(key);
 };
 
 util.str2arr = function(s) {
@@ -1850,10 +1826,7 @@ util.http = function(req) {
   util.http.conn++;
   if (!req.method) req.method = 'GET';
   req.method = req.method.toUpperCase();
-  var data = null;
-  if ((req.data != undefined) && (req.data != '')) {
-    data = req.data;
-  }
+  var data = (((req.data != undefined) && (req.data != '')) ? req.data : null);
   if (trc) {
     if (!data) data = {};
     if (typeof data == 'string') {
@@ -1862,9 +1835,7 @@ util.http = function(req) {
       data._trcid = trcid;
     }
   }
-  if (data instanceof Object) {
-    data = util.http.buildQueryString(data);
-  }
+  if (data instanceof Object) data = util.http.buildQueryString(data);
   var url = req.url;
   if (data && (req.method == 'GET')) {
     url += (url.match(/\?/) ? '&' : '?') + data;
@@ -4118,10 +4089,7 @@ util.Meter = function(target, opt) {
 
   var min = 0;
   var max = 100;
-  var low;
-  var high;
-  var optimum;
-  var value;
+  var low, high, optimum, value;
   var w = '100px';
   var h = '14px';
   var bg = '#888';
