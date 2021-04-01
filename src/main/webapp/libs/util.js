@@ -5,7 +5,7 @@
  * https://github.com/takashiharano/util
  */
 var util = util || {};
-util.v = '202103030103';
+util.v = '202104020000';
 
 util.DFLT_FADE_SPEED = 500;
 util.LS_AVAILABLE = false;
@@ -875,9 +875,7 @@ util.ClockTime.prototype = {
     return days;
   },
   toHrString: function(byTheDay) {
-    if (byTheDay === undefined) {
-      byTheDay = false;
-    }
+    if (byTheDay === undefined) byTheDay = false;
     var h = (byTheDay ? this.clockTm['hrs'] : this.tm['hours']);
     var hh = ((h < 10) ? ('0' + h).slice(-2) : h + '');
     return hh;
@@ -1208,6 +1206,16 @@ util.copyProps = function(src, dst) {
   }
 };
 
+util.copyDefaultProps = function(tgt, dflt) {
+  for (var k in dflt) {
+    if (!(k in tgt)) {
+      tgt[k] = dflt[k];
+    } else if (tgt[k] instanceof Object) {
+      util.copyDefaultProps(tgt[k], dflt[k]);
+    }
+  }
+};
+
 util.loadObject = function(key) {
   if (util.LS_AVAILABLE) {
     return JSON.parse(localStorage.getItem(key));
@@ -1223,7 +1231,26 @@ util.clearObject = function(key) {
   if (util.LS_AVAILABLE) localStorage.removeItem(key);
 };
 
-util.str2arr = function(s) {
+util.objtype = function(o) {
+  return Object.prototype.toString.call(o);
+};
+
+/**
+ * s='ABCDEF'
+ * n=2: ['AB', 'CD', 'EF']
+ * n=3: ['ABC', 'DEF']
+ */
+util.divideString = function(s, n) {
+  if ((s == undefined) || (s == null)) return s;
+  if ((n <= 0) || (s == '')) return [s];
+  var a = [];
+  for (var i = 0; i < s.length / n; i++) {
+    a.push(s.substr(i * n, n));
+  }
+  return a;
+};
+
+util.divideChars = function(s) {
   return s.match(/[\uD800-\uDBFF][\uDC00-\uDFFF]|[\s\S]/g) || [];
 };
 
@@ -1342,8 +1369,7 @@ util.null2empty = function(s) {
 
 util.countStr = function(s, p) {
   var i = 0;
-  var t = Object.prototype.toString.call(p);
-  if (t == '[object RegExp]') {
+  if (util.objtype(p) == '[object RegExp]') {
     var m = s.match(p);
     if (m) i = m.length;
   } else {
@@ -1384,7 +1410,7 @@ util.shift2full = function(w) {
 
 util.getUnicodePoints = function(str) {
   var cd = '';
-  var chs = util.str2arr(str);
+  var chs = util.divideChars(str);
   for (var i = 0; i < chs.length; i++) {
     var p = util.getCodePoint(chs[i], true);
     if (i > 0) cd += ' ';
@@ -1589,9 +1615,7 @@ util.strp = function(tbl, idx) {
         a[j]++;
         if (a[j] > len - 1) {
           a[j] = 0;
-          if (a.length <= j + 1) {
-            a[j + 1] = -1;
-          }
+          if (a.length <= j + 1) a[j + 1] = -1;
         } else {
           cb = 0;
         }
@@ -1758,9 +1782,9 @@ util.arr.toUniqueValues = function(arr, srt) {
     v.push({key: k, cnt: o[k]});
   }
   if (srt == 'asc|count') {
-    v.sort(function(a, b) {return a.cnt - b.cnt;});
+    v = util.sortObj(v, 'cnt');
   } else if (srt == 'desc|count') {
-    v.sort(function(a, b) {return b.cnt - a.cnt;});
+    v = util.sortObj(v, 'cnt', true);
   }
   var r = [];
   for (var i = 0; i < v.length; i++) {
@@ -1781,6 +1805,19 @@ util.addListItem = function(list, item) {
 
 util.removeListItem = function(list, item) {
   if (list) util.arr.del(list, item);
+};
+
+/**
+ * [{id: 'A', cnt: 2}, {id: 'B', cnt: 1}, {id: 'C', cnt: 3}]
+ * -> [{id: 'B', cnt: 1}, {id: 'A', cnt: 2}, {id: 'C', cnt: 3}]
+ */
+util.sortObj = function(list, key, desc) {
+  if (desc) {
+    list.sort(function(a, b) {return b[key] - a[key];});
+  } else {
+    list.sort(function(a, b) {return a[key] - b[key];});
+  }
+  return list;
 };
 
 //-----------------------------------------------------------------------------
@@ -2015,7 +2052,7 @@ var $el = function(target, idx) {
       if (el[k] == undefined) el[k] = $el.fn[k];
     }
   } else {
-    el = {notFound: true, style: {}};
+    el = {notExists: true, style: {}};
     for (k in $el.fn) {
       el[k] = util.nop;
     }
@@ -2088,7 +2125,9 @@ $el.fn = {
   },
   hide: function() {
     var el = this;
-    el.displayBak = el.style.display;
+    var v = el.style.display;
+    if (v == 'none') return;
+    el.displayBak = v;
     el.style.display = 'none';
   },
   show: function() {
@@ -2271,6 +2310,117 @@ util.html2text = function(s) {
   var p = document.createElement('pre');
   p.innerHTML = s;
   return p.innerText;
+};
+
+util.getCtxIdx4El = function(ctxs, el) {
+  for (var i = 0; i < ctxs.length; i++) {
+    var ctx = ctxs[i];
+    if (ctx.el == el) return i;
+  }
+  return -1;
+};
+util.getCtx4El = function(ctxs, el) {
+  var ctx = null;
+  var i = util.getCtxIdx4El(ctxs, el);
+  if (i >= 0) ctx = ctxs[i];
+  return ctx;
+};
+
+//-----------------------------------------------------------------------------
+util.overlay = {};
+util.overlay.DFLT_FADE_SPEED = 250;
+util.overlay.DFLT_SHOW_OPT = {pos: 'nw', adjX: 0, adjY: 0, fade: 0};
+util.overlay.DFLT_HIDE_OPT = {fade: 0};
+/**
+ * tgt: must be style.position != 'static'
+ * opt: {pos: 'nw|n|ne|e|se|s|sw|w', adjX: 0, adjY: 0, fade: 0}
+ */
+util.overlay.show = function(tgt, el, opt) {
+  tgt = util.getElement(tgt);
+  el = util.getElement(el);
+  if (!tgt || !el || tgt.contains(el)) return;
+  if (!opt) opt = {};
+  util.copyDefaultProps(opt, util.overlay.DFLT_SHOW_OPT);
+  el.style.opacity = 0;
+  el.style.position = 'absolute';
+  if (opt.fade > 0) util.addClass(el, 'fadeout');
+  tgt.appendChild(el);
+  setTimeout(util.overlay._show, 0, tgt, el, opt);
+};
+util.overlay._show = function(tgt, el, opt) {
+  el.style.opacity = 1;
+  var tgtSP = util.getElSizePos(tgt);
+  var elSP = util.getElSizePos(el);
+  var x = 0;
+  var y = 0;
+  switch (opt.pos) {
+    case 'n':
+      x = tgtSP.wC - elSP.wC;
+      break;
+    case 'ne':
+      x = tgtSP.w - elSP.w;
+      break;
+    case 'e':
+      y = tgtSP.hC - elSP.hC;
+      x = tgtSP.w - elSP.w;
+      break;
+    case 'se':
+      y = tgtSP.h - elSP.h;
+      x = tgtSP.w - elSP.w;
+      break;
+    case 's':
+      y = tgtSP.h - elSP.h;
+      x = tgtSP.wC - elSP.wC;
+      break;
+    case 'sw':
+      y = tgtSP.h - elSP.h;
+      break;
+    case 'w':
+      y = tgtSP.hC - elSP.hC;
+      break;
+    case 'c':
+      y = tgtSP.hC - elSP.hC;
+      x = tgtSP.wC - elSP.wC;
+  }
+  el.style.top = (y + opt.adjY) + 'px';
+  el.style.left = (x + opt.adjX) + 'px';
+  if (opt.fade > 0) {
+    setTimeout(util.overlay.__show, 0, el, opt.fade);
+  } else {
+    util.clearFade(el);
+  }
+};
+util.overlay.__show = function(el, speed) {
+ util.fadeIn(el, speed);
+};
+util.overlay.hide = function(tgt, el, opt) {
+  tgt = util.getElement(tgt);
+  el = util.getElement(el);
+  if (!tgt || !el || !tgt.contains(el)) return;
+  if (!opt) opt = {};
+  util.copyDefaultProps(opt, util.overlay.DFLT_HIDE_OPT);
+  var o = {el: el, tgt: tgt};
+  if (opt.fade > 0) {
+    util.fadeOut(el, opt.fade, util.overlay._hide, o);
+  } else {
+    util.overlay._hide(o);
+  }
+};
+util.overlay._hide = function(o) {
+  o.tgt.removeChild(o.el);
+};
+util.getElSizePos = function(el) {
+  var r = el.getBoundingClientRect();
+  var rT = Math.round(r.top);
+  var rL = Math.round(r.left);
+  var rR = Math.round(r.right);
+  var rB = Math.round(r.bottom);
+  var o = {x1: rL, y1: rT, x2: rR, y2: rB, w: ((rR - rL) + 1), h: ((rB - rT) + 1)};
+  o.wC = o.w / 2;
+  o.hC = o.h / 2;
+  o.xC = o.x1 + o.wC;
+  o.yC = o.y1 + o.hC;
+  return o;
 };
 
 // f = function() {/*
@@ -2511,7 +2661,7 @@ util.updateTextAreaInfo = function(textarea) {
   var st = textarea.selectionStart;
   var ed = textarea.selectionEnd;
   var sl = ed - st;
-  var ch = util.str2arr(txt)[st] || '';
+  var ch = util.divideChars(txt)[st] || '';
   var cd = util.getCodePoint(ch);
   var cd16 = util.getUnicodePoints(ch, true);
   var cp = '';
@@ -2576,19 +2726,19 @@ util.writeHTML = function(target, html, speed) {
     util.clearHTML(el, speed);
   } else {
     el.innerHTML = '';
-    var cbData = {html: html, speed: speed};
+    var cbData = {el: el, html: html, speed: speed};
     util.fadeOut(el, 0, util._writeHTML, cbData);
   }
 };
-util._writeHTML = function(target, cbData) {
+util._writeHTML = function(cbData) {
   var DFLT_SPEED = 250;
   var speed = cbData.speed;
   if ((speed == undefined) || (speed < 0)) speed = DFLT_SPEED;
-  target.innerHTML = cbData.html;
-  setTimeout(util.__writeHTML, 10, target, speed);
+  cbData.el.innerHTML = cbData.html;
+  setTimeout(util.__writeHTML, 10, cbData);
 };
-util.__writeHTML = function(target, speed) {
-  util.fadeIn(target, speed);
+util.__writeHTML = function(cbData) {
+  util.fadeIn(cbData.el, cbData.speed);
 };
 
 /**
@@ -2597,7 +2747,7 @@ util.__writeHTML = function(target, speed) {
 util.clearHTML = function(target, speed) {
   var DFLT_SPEED = 200;
   if ((speed == undefined) || (speed < 0)) speed = DFLT_SPEED;
-  util.fadeOut(target, speed, util._clearHTML);
+  util.fadeOut(target, speed, util._clearHTML, target);
 };
 util._clearHTML = function(el) {
   el.innerHTML = '';
@@ -2608,32 +2758,44 @@ util._clearHTML = function(el) {
 // Text Sequencer
 //-----------------------------------------------------------------------------
 /**
- * opt = {
- *  speed: 20,
- *  step: 1,
- *  start: 0,
- *  len: -1,
- *  reverse: false,
- *  cursor: {
- *   speed: 100,
- *   n: 3
- *  },
- *  onprogress: <callback-function(ctx, chunk)>,
- *  oncomplete: <callback-function(ctx)>
- * };
  * var ctx = util.textseq(el, text, opt);
+ * opt: see DFLT_OPT
  */
 util.textseq = function(el, text, opt) {
-  var ctx = util.textseq.getCtx(el);
+  el = util.getElement(el);
+  if (!opt) opt = {};
+  var cursor = opt.cursor;
+  if (typeof opt.cursor == 'number') delete opt.cursor;
+  util.copyDefaultProps(opt, util.textseq.DFLT_OPT);
+  if (typeof cursor == 'number') opt.cursor.n = cursor;
+  if (text instanceof Array) {
+    el.$$textseqCtx = {textList: text, idx: 0, opt: opt};
+    text = text[0];
+  }
+  return util.textseq1(el, text, opt);
+};
+util.textseq.DFLT_OPT = {
+  speed: 20,
+  step: 1,
+  start: 0,
+  len: -1,
+  reverse: false,
+  cursor: {n: 0, speed: 100, repeat: false},
+  pause: 1000, // for text array
+  onprogress: null, // <callback-function(ctx, chunk)>
+  oncomplete: null // <callback-function(ctx)>
+};
+util.textseq1 = function(el, text, opt) {
+  var ctx = util.getCtx4El(util.textseq.ctxs, el);
   if (ctx) util.textseq._stop(ctx);
   ctx = util.textseq.createCtx(el, text, opt);
-  var i = util.textseq.idx(el);
+  var i = util.getCtxIdx4El(util.textseq.ctxs, el);
   if (i < 0) {
     util.textseq.ctxs.push(ctx);
   } else {
     util.textseq.ctxs[i] = ctx;
   }
-  var f = (ctx.cursor.speed ? util.textseq.blinkCursor : (ctx.reverse ? util.textseq._reverse : util.textseq._textseq));
+  var f = (ctx.cursor.n && ctx.cursor.speed ? util.textseq.blinkCursor : (ctx.reverse ? util.textseq._reverse : util.textseq._textseq));
   ctx.tmrId = setTimeout(f, 0, ctx);
   return ctx;
 };
@@ -2692,14 +2854,14 @@ util.textseq.getText = function(ctx) {
   return ctx.text.substr(0, len);
 };
 util.textseq.start = function(el) {
-  var ctx = util.textseq.getCtx(el);
+  var ctx = util.getCtx4El(util.textseq.ctxs, el);
   if (!ctx) return;
   util.textseq._stop(ctx);
   var f = ctx.reverse ? util.textseq._reverse : util.textseq._textseq;
   f(ctx);
 };
 util.textseq.stop = function(el) {
-  var i = util.textseq.idx(el);
+  var i = util.getCtxIdx4El(util.textseq.ctxs, el);
   if (i < 0) return;
   var ctx = util.textseq.ctxs[i];
   util.textseq._stop(ctx);
@@ -2729,9 +2891,20 @@ util.textseq.onprogress = function(ctx, pos, prevPos, cutLen) {
   ctx.onprogress(ctx, chunk);
 };
 util.textseq.oncomplete = function(ctx) {
-  var i = util.textseq.idx(ctx.el);
+  var el = ctx.el;
+  var i = util.getCtxIdx4El(util.textseq.ctxs, el);
   util.textseq.ctxs.splice(i, 1);
-  if (ctx.oncomplete) ctx.oncomplete(ctx);
+  var textseqCtx = el.$$textseqCtx;
+  var idx;
+  if (textseqCtx) idx = textseqCtx.idx;
+  if (ctx.oncomplete) ctx.oncomplete(ctx, idx);
+  if (textseqCtx) {
+    textseqCtx.idx++;
+    if (textseqCtx.idx < textseqCtx.textList.length) {
+      if (!textseqCtx.opt.cursor.repeat) textseqCtx.opt.cursor.n = 0;
+      setTimeout(util.textseq1, textseqCtx.opt.pause, el, textseqCtx.textList[textseqCtx.idx], textseqCtx.opt);
+    }
+  }
 };
 util.textseq.createCtx = function(el, text, opt) {
   if (!opt) opt = {};
@@ -2739,9 +2912,8 @@ util.textseq.createCtx = function(el, text, opt) {
   var orgTxt = text;
   if (!isInp) text = util.html2text(text);
   var txtLen = text.length;
-  var len = (((opt.len == undefined) || (opt.len < 0)) ? -1 : opt.len);
-  var step = (opt.step == undefined ? 1 : opt.step);
-  if (opt.start == undefined) opt.start = 0;
+  var len = ((opt.len < 0) ? -1 : opt.len);
+  var step = opt.step;
   var cutLen = step;
   if (opt.reverse) {
     if (opt.start == 0) {
@@ -2769,21 +2941,19 @@ util.textseq.createCtx = function(el, text, opt) {
     pos = start;
     if (pos < 0) pos = 0;
   }
-  var cursor = {};
-  if (opt.cursor != undefined) {
-    cursor = {speed: 100, n: 3};
-    if (typeof opt.cursor == 'number') {
-      cursor.speed = opt.cursor;
-    } else {
-      if (opt.cursor.speed != undefined) cursor.speed = opt.cursor.speed;
-      if (opt.cursor.n != undefined) cursor.n = opt.cursor.n;
-    }
+  el.innerHTML = '';
+  delete el.$$textseqSpan;
+  if (opt.style && !isInp) {
+    var span = document.createElement('span');
+    util.setStyles(span, opt.style);
+    el.$$textseqSpan = span;
+    el.appendChild(span);
   }
   var ctx = {
     el: el,
     orgTxt: orgTxt,
     text: text,
-    speed: (opt.speed == undefined ? util.textseq.DFLT_SPEED : opt.speed),
+    speed: opt.speed,
     step: step,
     start: start,
     end: end,
@@ -2792,32 +2962,16 @@ util.textseq.createCtx = function(el, text, opt) {
     prevPos: prevPos,
     pos: pos,
     cutLen: cutLen,
-    reverse: (opt.reverse ? true : false),
-    cursor: cursor,
+    reverse: opt.reverse,
+    cursor: opt.cursor,
     cursorCnt: 0,
     onprogress: opt.onprogress,
     oncomplete: opt.oncomplete
   };
   return ctx;
 };
-util.textseq.idx = function(el) {
-  var ctxs = util.textseq.ctxs;
-  for (var i = 0; i < ctxs.length; i++) {
-    var ctx = ctxs[i];
-    if (ctx.el == el) return i;
-  }
-  return -1;
-};
-util.textseq.getCtx = function(el) {
-  var ctx = null;
-  var i = util.textseq.idx(el);
-  if (i >= 0) ctx = util.textseq.ctxs[i];
-  return ctx;
-};
 util.textseq.getSpeed = function(ctx) {
-  var speed = ctx.speed;
-  if (speed < 0) speed = util.textseq.DFLT_SPEED;
-  return speed;
+  return ctx.speed;
 };
 util.textseq.blinkCursor = function(ctx) {
   var speed = util.textseq.getSpeed(ctx);
@@ -2837,10 +2991,10 @@ util.textseq.print = function(ctx, s) {
   if (ctx.isInp) {
     ctx.el.value = s;
   } else {
-    ctx.el.innerHTML = s;
+    var tgt = (ctx.el.$$textseqSpan ? ctx.el.$$textseqSpan : ctx.el);
+    tgt.innerHTML = s;
   }
 };
-util.textseq.DFLT_SPEED = 20;
 util.textseq.ctxs = [];
 
 //-----------------------------------------------------------------------------
@@ -2966,7 +3120,7 @@ util.infotip.opt = null;
 /**
  * show("message");
  * show("message", 3000);
- * show("message", 0, {pos: {x: 100, y: 200});
+ * show("message", 0, {pos: {x: 100, y: 200}});
  * show("message", 0, {pos: 'pointer', offset: {x: 5, y: -8}});
  * show("message", 0, {pos: 'active'});
  * show("message", 0, {style: {'font-size': '18px'}});
@@ -3283,7 +3437,12 @@ util._fadeOut = function(el, speed, cb, arg) {
 };
 util.__fadeOut = function(dat) {
   dat.el.fadeTimerId = 0;
-  if (dat.cb) dat.cb(dat.el, dat.arg);
+  if (dat.cb) dat.cb(dat.arg);
+};
+util.clearFade = function(el) {
+  util.setStyle(el, 'transition', '');
+  util.removeClass(el, 'fadein');
+  util.removeClass(el, 'fadeout');
 };
 
 //-----------------------------------------------------------------------------
@@ -3346,85 +3505,100 @@ util.createFadeScreenEl = function(bg) {
 // Loader Indication
 //-----------------------------------------------------------------------------
 util.loader = {};
-util.loader.timerId = 0;
-util.loader.count = 0;
-util.loader.el = null;
-
+util.loader.DFLTOPT = {
+  delay: 500,
+  size: '46px',
+  color1: '#ccc',
+  color2: 'rgba(204, 204, 204, 0.25)',
+  weight: '4px',
+  speed: '1s',
+};
+util.loader.cnt = 0;
+util.loader.ctxs = [];
 util.loader.registerStyle = function() {
   var style = '@keyframes loader-rotate {';
-  style += '  0% {';
-  style += '    transform: rotate(0);';
-  style += '  }';
-  style += '  100% {';
-  style += '    transform: rotate(360deg);';
-  style += '  }';
+  style += '0% {transform: rotate(0);}';
+  style += '100% {transform: rotate(360deg);}';
   style += '}';
-  style += '.loader {';
-  style += '  display: block;';
-  style += '  width: 46px;';
-  style += '  height: 46px;';
-  style += '  border: 4px solid rgba(204, 204, 204, 0.25);';
-  style += '  border-top-color: #ccc;';
-  style += '  border-radius: 50%;';
-  style += '  position: fixed;';
-  style += '  top: 0;';
-  style += '  left: 0;';
-  style += '  right: 0;';
-  style += '  bottom: 0;';
-  style += '  margin: auto;';
-  style += '  animation: loader-rotate 1s linear infinite;';
-  style += '}';
-  style += '.loading {';
-  style += '  cursor: progress !important;';
-  style += '}';
+  style += '.loading {cursor: progress !important;}';
   util.registerStyle(style);
 };
 
-util.loader.show = function(delay) {
-  util.loader.count++;
-  if (util.loader.count > 1) return;
-  if (delay == undefined) delay = 500;
-  util.loader.timerId = setTimeout(util.loader._show, delay);
-};
-util.loader._show = function() {
-  util.loader.timerId = 0;
-  var el = util.loader.el;
-  if (!el) {
-    el = util.loader.create();
-    util.loader.el = el;
+util.loader.show = function(el, opt) {
+  if (util.objtype(el) == '[object Object]') {
+    opt = el;
+    el = null;
   }
-  util.addClass(document.body, 'loading');
-  document.body.appendChild(el);
-  util.fadeIn(el);
+  if (!opt) opt = {};
+  util.copyDefaultProps(opt, util.loader.DFLTOPT);
+  el = util.getElement(el);
+  if (!el) el = document.body;
+  var ctx = util.getCtx4El(util.loader.ctxs, el);
+  if (!ctx) {
+    var ldrEl = util.loader.create(opt);
+    ctx = {el: el, opt: opt, ldrEl: ldrEl, cnt: 0, timerId: 0};
+    util.loader.ctxs.push(ctx);
+    util.addClass(ldrEl, 'fadeout');
+  }
+  ctx.cnt++;
+  util.loader.cnt++;
+  if (ctx.cnt > 1) return;
+  ctx.timerId = setTimeout(util.loader._show, opt.delay, ctx);
 };
-
-util.loader.create = function() {
+util.loader._show = function(ctx) {
+  ctx.timerId = 0;
+  util.addClass(document.body, 'loading');
+  util.overlay.show(ctx.el, ctx.ldrEl);
+  util.fadeIn(ctx.ldrEl, 500);
+};
+util.loader.create = function(opt) {
   var el = document.createElement('div');
-  el.className = 'loader';
+  var s = {
+    display: 'inline-block',
+    position: 'fixed',
+    width: opt.size,
+    height: opt.size,
+    border: opt.weight + ' solid ' + opt.color2,
+    'border-top-color': opt.color1,
+    'border-radius': '50%',
+    top: '0',
+    left: '0',
+    right: '0',
+    bottom: '0',
+    margin: 'auto',
+    animation: 'loader-rotate ' + opt.speed + ' linear infinite'
+  };
+  util.setStyles(el, s);
   return el;
 };
 
-util.loader.hide = function(force) {
+util.loader.hide = function(el, force) {
+  el = util.getElement(el);
+  if (!el) el = document.body;
+  var ctx = util.getCtx4El(util.loader.ctxs, el);
+  if (!ctx) return;
   if (force) {
-    util.loader.count = 0;
-  } else if (util.loader.count > 0) {
-    util.loader.count--;
+    util.loader.cnt -= ctx.cnt;
+    ctx.cnt = 0;
+  } else if (ctx.cnt > 0) {
+    ctx.cnt--;
+    util.loader.cnt--;
   }
-  if (util.loader.count == 0) {
-    if (util.loader.timerId > 0) {
-      clearTimeout(util.loader.timerId);
-      util.loader.timerId = 0;
-    }
+  if (ctx.cnt > 0) return;
+  if (ctx.timerId > 0) {
+    clearTimeout(ctx.timerId);
+    ctx.timerId = 0;
+  }
+  if (util.loader.cnt <= 0) {
+    util.loader.cnt = 0;
     util.removeClass(document.body, 'loading');
-    util.fadeOut(util.loader.el, 0, util.loader._hide);
   }
+  util.fadeOut(ctx.ldrEl, 200, util.loader._hide, ctx);
 };
-
-util.loader._hide = function() {
-  if (util.loader.el) {
-    document.body.removeChild(util.loader.el);
-    util.loader.el = null;
-  }
+util.loader._hide = function(ctx) {
+  util.overlay.hide(ctx.el, ctx.ldrEl);
+  var i = util.getCtxIdx4El(util.loader.ctxs, ctx.el);
+  util.loader.ctxs.splice(i, 1);
 };
 
 //-----------------------------------------------------------------------------
@@ -3457,7 +3631,7 @@ util.modal.prototype = {
     var ctx = el.ctx;
     if (!ctx.closing) {
       ctx.closing = true;
-      util.fadeOut(el, 200, ctx._hide);
+      util.fadeOut(el, 200, ctx._hide, el);
     }
   },
   _hide: function(el) {
@@ -4792,7 +4966,7 @@ util.UTF8 = {};
 util.UTF8.toByteArray = function(s) {
   var a = [];
   if (!s) return a;
-  var chs = util.str2arr(s);
+  var chs = util.divideChars(s);
   for (var i = 0; i < chs.length; i++) {
     var ch = chs[i];
     var c = ch.charCodeAt(0);
@@ -5585,6 +5759,20 @@ util.isTargetKey = function(e, handler) {
   return false;
 };
 
+util.addEnterKeyHandler = function(fn) {
+  util.addKeyHandler('down', 13, fn);
+};
+
+util.addEscKeyHandler = function(fn) {
+  util.addKeyHandler('down', 27, fn);
+};
+
+// k: keyCode or 'A-Za-z0-9'
+util.addCtrlKeyHandler = function(k, fn) {
+  if (typeof k == 'string') k = k.toUpperCase().charCodeAt(0);
+  util.addKeyHandler('down', k, fn, {ctrl: true, shift: false, alt: false, meta: false});
+};
+
 //-----------------------------------------------------------------------------
 /**
  * cb = function(data, file)
@@ -5760,52 +5948,23 @@ util.isTargetEl = function(el, tgt) {
 };
 
 //-----------------------------------------------------------------------------
-util.loadScript = function(path) {
-  var s = document.createElement('script');
-  s.src = path;
-  document.body.appendChild(s);
+util._log = function(o) {
+  if (window.log) window.log(o);
 };
-
-//-----------------------------------------------------------------------------
-util.setupLogs = function() {
-  if (!window.log) {
-    window.log = function(o) {
-      console.log(o);
-    };
-    window.log.v = function(o) {
-      console.log(o);
-    };
-    window.log.d = function(o) {
-      console.log(o);
-    };
-    window.log.i = function(o) {
-      console.info(o);
-    };
-    window.log.w = function(o) {
-      console.warn(o);
-    };
-    window.log.e = function(o) {
-      console.error(o);
-    };
-  }
-  util._log = function(o) {
-    window.log(o);
-  };
-  util._log.v = function(o) {
-    window.log.v(o);
-  };
-  util._log.d = function(o) {
-    window.log.d(o);
-  };
-  util._log.i = function(o) {
-    window.log.i(o);
-  };
-  util._log.w = function(o) {
-    window.log.w(o);
-  };
-  util._log.e = function(o) {
-    window.log.e(o);
-  };
+util._log.v = function(o) {
+  if (window.log) window.log.v(o);
+};
+util._log.d = function(o) {
+  if (window.log) window.log.d(o);
+};
+util._log.i = function(o) {
+  if (window.log) window.log.i(o);
+};
+util._log.w = function(o) {
+  if (window.log) window.log.w(o);
+};
+util._log.e = function(o) {
+  if (window.log) window.log.e(o);
 };
 
 //-----------------------------------------------------------------------------
@@ -5896,7 +6055,6 @@ util.nop = function() {};
 
 //-----------------------------------------------------------------------------
 util.init = function() {
-  util.setupLogs();
   try {
     if (typeof window.localStorage != 'undefined') util.LS_AVAILABLE = true;
   } catch (e) {}
