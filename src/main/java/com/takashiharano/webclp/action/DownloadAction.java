@@ -7,7 +7,7 @@ public class DownloadAction extends Action {
 
   @Override
   public void process(ProcessContext context) throws Exception {
-    String uploadDir = AppManager.getAppHome() + "/" + AppManager.getConfigValue("upload_dir");
+    String uploadDir = AppManager.getAppWorkspacePath() + "/upload";
     String fileName = context.getRequestParameter("file");
     String path = uploadDir + "/" + fileName;
     context.sendStreamResponse(path);

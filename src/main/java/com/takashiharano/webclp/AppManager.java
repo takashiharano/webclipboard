@@ -8,14 +8,19 @@ import java.util.jar.Manifest;
 import javax.servlet.ServletContext;
 
 import com.takashiharano.util.Log;
+import com.takashiharano.util.StrUtil;
 
 public class AppManager {
-  private static final String BASE_PACKAGE_NAME = "com.takashiharano.webclp";
-  private static final String MODULE_NAME = "webclp";
+
+  private static final String APPHOME_BASENAME = "webapphome";
+  private static final String PROPERTIES_FILENAME = "app.properties";
+  private static final String CONFIGKEY_WORKSPACE = "app_workspace";
 
   private static AppManager instance;
   private static Config config;
   private static String errorInfo;
+  private static String appHomePath;
+  private static String appWorkspacePath;
 
   private AppManager() {
   }
@@ -36,11 +41,11 @@ public class AppManager {
   }
 
   public static String getBasePackageName() {
-    return BASE_PACKAGE_NAME;
+    return AppInfo.BASE_PACKAGE_NAME;
   }
 
   public static String getModuleName() {
-    return MODULE_NAME;
+    return AppInfo.MODULE_NAME;
   }
 
   public static void reset() {
@@ -56,33 +61,42 @@ public class AppManager {
     return errorInfo;
   }
 
-  public static String getAppHome() {
-    return config.getValue("app_home");
+  public static String getAppWorkspacePath() {
+    return appWorkspacePath;
   }
 
   private static void init() {
     errorInfo = null;
     try {
       _init();
-      Log.i("== Ready ==");
+      Log.i("[OK] ==> APP READY");
     } catch (Exception e) {
       errorInfo = e.getMessage();
     }
   }
 
   private static void _init() throws Exception {
-    String home = System.getenv("HOME");
-    if (home == null) {
+    String homePath = System.getenv("HOME");
+    if (homePath == null) {
       throw new Exception("System env \"HOME\" is not defined.");
     }
     int logLevel = Log.LogLevel.DEBUG.getLevel();
-    Log.init(logLevel, MODULE_NAME);
-    String propFilePath = home + "/webappconf/" + MODULE_NAME + ".properties";
+    Log.init(logLevel, AppInfo.MODULE_NAME);
+    appHomePath = homePath + "/" + APPHOME_BASENAME + "/" + AppInfo.MODULE_NAME;
+    Log.i("WebAppHome: " + appHomePath);
+
+    String propFilePath = appHomePath + "/" + PROPERTIES_FILENAME;
     config = new Config(propFilePath);
+
+    appWorkspacePath = config.getValue(CONFIGKEY_WORKSPACE);
+    if (StrUtil.isEmpty(appWorkspacePath)) {
+      appWorkspacePath = appHomePath;
+    }
+    Log.i("WebAppWorkspace: " + appWorkspacePath);
 
     long validity = 0;
     try {
-      validity = config.getLongValue("clipboard_validity_sec");
+      validity = config.getLongValue("clipboard_validity_sec", 300);
     } catch (Exception e) {
     }
     Clipboard.init(validity);
@@ -119,7 +133,7 @@ public class AppManager {
    * @param name
    * @return
    */
-  public static String readManifest(ProcessContext context, String name) throws IOException {
+  public static String getManifestEntry(ProcessContext context, String name) throws IOException {
     ServletContext servletContext = context.getServletContext();
     String value = null;
     try (InputStream is = servletContext.getResourceAsStream("/META-INF/MANIFEST.MF")) {
@@ -139,8 +153,12 @@ public class AppManager {
    * @return
    */
   public static String getVersionInfo(ProcessContext context) throws IOException {
-    String buildTime = readManifest(context, "Build-Timestamp");
+    String buildTime = getManifestEntry(context, "Build-Timestamp");
     return buildTime;
+  }
+
+  public static String getUploadPath() {
+    return getAppWorkspacePath() + "/upload";
   }
 
 }

@@ -5,13 +5,19 @@ import java.io.IOException;
 import java.util.Enumeration;
 import java.util.Properties;
 
+import com.takashiharano.util.FileUtil;
 import com.takashiharano.util.Log;
 
 public class Config {
   private Properties properties;
 
   public Config(String fipePath) {
-    load(fipePath);
+    properties = new Properties();
+    if (FileUtil.exists(fipePath)) {
+      load(fipePath);
+    } else {
+      Log.i("Config file not found. Skip loading.");
+    }
   }
 
   private void load(String fipePath) {
@@ -21,6 +27,7 @@ public class Config {
       properties.load(fis);
     } catch (IOException ioe) {
       String message = "Failed to load properties: " + fipePath;
+      Log.e(message);
       throw new RuntimeException(message, ioe);
     }
   }

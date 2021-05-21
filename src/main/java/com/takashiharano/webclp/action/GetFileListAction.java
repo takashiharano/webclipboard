@@ -11,7 +11,7 @@ public class GetFileListAction extends Action {
 
   @Override
   public void process(ProcessContext context) throws Exception {
-    String uploadDir = AppManager.getAppHome() + "/" + AppManager.getConfigValue("upload_dir");
+    String uploadDir = AppManager.getUploadPath();
     File[] files = FileUtil.listFiles(uploadDir);
     if (files == null) {
       files = new File[0];

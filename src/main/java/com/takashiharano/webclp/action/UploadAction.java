@@ -13,6 +13,10 @@ public class UploadAction extends Action {
 
   @Override
   public void process(ProcessContext context) throws Exception {
+    String uploadDir = AppManager.getUploadPath();
+    if (!FileUtil.exists(uploadDir)) {
+      FileUtil.mkdir(uploadDir);
+    }
     HttpServletRequest request = context.getRequest();
     Collection<Part> parts = request.getParts();
     for (Part part : parts) {
@@ -20,8 +24,6 @@ public class UploadAction extends Action {
       if (name.equals("files")) {
         String fileName = getFilename(part);
         if ((fileName != null) && !fileName.equals("")) {
-          String uploadDir = AppManager.getAppHome() + "/" + AppManager.getConfigValue("upload_dir");
-          FileUtil.mkdir(uploadDir);
           String filePath = uploadDir + "/" + fileName;
           part.write(filePath);
         }

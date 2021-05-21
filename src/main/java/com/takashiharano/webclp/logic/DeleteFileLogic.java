@@ -7,7 +7,7 @@ import com.takashiharano.webclp.ProcessContext;
 public class DeleteFileLogic {
 
   public void process(ProcessContext context, String fileName) throws Exception {
-    String uploadDir = AppManager.getAppHome() + "/" + AppManager.getConfigValue("upload_dir");
+    String uploadDir = AppManager.getUploadPath();
     if ("*".equals(fileName)) {
       deleteAll(uploadDir);
     } else {
