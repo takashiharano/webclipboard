@@ -5,8 +5,7 @@ import java.io.IOException;
 import java.util.Enumeration;
 import java.util.Properties;
 
-import com.takashiharano.util.FileUtil;
-import com.takashiharano.util.Log;
+import com.libutil.FileUtil;
 
 public class Config {
   private Properties properties;

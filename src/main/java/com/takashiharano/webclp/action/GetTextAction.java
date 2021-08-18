@@ -1,6 +1,6 @@
 package com.takashiharano.webclp.action;
 
-import com.takashiharano.util.StrUtil;
+import com.libutil.StrUtil;
 import com.takashiharano.webclp.Clipboard;
 import com.takashiharano.webclp.ProcessContext;
 

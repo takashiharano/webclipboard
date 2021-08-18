@@ -1,6 +1,6 @@
 package com.takashiharano.webclp.logic;
 
-import com.takashiharano.util.FileUtil;
+import com.libutil.FileUtil;
 import com.takashiharano.webclp.AppManager;
 import com.takashiharano.webclp.ProcessContext;
 

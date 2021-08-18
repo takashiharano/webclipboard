@@ -5,7 +5,7 @@ import java.util.Collection;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.Part;
 
-import com.takashiharano.util.FileUtil;
+import com.libutil.FileUtil;
 import com.takashiharano.webclp.AppManager;
 import com.takashiharano.webclp.ProcessContext;
 

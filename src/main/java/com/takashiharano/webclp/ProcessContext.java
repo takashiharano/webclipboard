@@ -15,9 +15,8 @@ import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import com.takashiharano.util.FileUtil;
-import com.takashiharano.util.JsonBuilder;
-import com.takashiharano.util.Log;
+import com.libutil.FileUtil;
+import com.libutil.JsonBuilder;
 
 public class ProcessContext {
   private HttpServletRequest request;

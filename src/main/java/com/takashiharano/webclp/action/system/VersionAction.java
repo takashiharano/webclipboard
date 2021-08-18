@@ -1,6 +1,6 @@
 package com.takashiharano.webclp.action.system;
 
-import com.takashiharano.util.JsonBuilder;
+import com.libutil.JsonBuilder;
 import com.takashiharano.webclp.AppManager;
 import com.takashiharano.webclp.ProcessContext;
 import com.takashiharano.webclp.action.Action;

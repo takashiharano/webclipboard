@@ -10,7 +10,7 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import com.takashiharano.util.JsonBuilder;
+import com.libutil.JsonBuilder;
 import com.takashiharano.webclp.action.Action;
 
 @WebServlet(name = "MainServlet", urlPatterns = ("/main"))
