@@ -2,19 +2,19 @@
  * util.js
  * Copyright 2019 Takashi Harano
  * Released under the MIT license
- * https://github.com/takashiharano/util
+ * https://libutil.com/
  */
 var util = util || {};
-util.v = '202104080000';
+util.v = '202111010000';
 
 util.DFLT_FADE_SPEED = 500;
 util.LS_AVAILABLE = false;
 util.mouseX = 0;
 util.mouseY = 0;
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // Date & Time
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.MINUTE = 60000;
 util.HOUR = 3600000;
 util.DAY = 86400000;
@@ -57,7 +57,7 @@ util.DateTime = function(src, tzOffset) {
     tzOffset = util.getTZ();
   } else {
     var os = tzOffset;
-    if (typeof os == 'string') os = util.getTzLocalOffset(os);
+    if (typeof os == 'string') os = util.getOffsetFromLocalTz(os);
     dt = new Date(timestamp + os);
     timestamp = dt.getTime();
   }
@@ -65,7 +65,7 @@ util.DateTime = function(src, tzOffset) {
   if (st) {
     timestamp += st.millisecond;
     if (st.tz != '') {
-      var tzdf = util.getTzLocalOffset(st.tz);
+      var tzdf = util.getOffsetFromLocalTz(st.tz);
       timestamp -= tzdf;
     }
   }
@@ -137,7 +137,7 @@ util.datetime2struct = function(s) {
       w = w.substr(0, zPos);
     }
   }
-  w = util.serializeDateTimeString(w);
+  w = util.serializeDateTime(w);
   var yyyy = w.substr(0, 4) | 0;
   var mm = w.substr(4, 2) | 0;
   var dd = w.substr(6, 2) | 0;
@@ -177,12 +177,9 @@ util._getTzPos = function(s) {
  * 2020-09-20 12:34:56.789 -> 20200920123456789
  * 2020/9/3 12:34:56.789   -> 20200903123456789
  */
-util.serializeDateTimeString = function(s) {
-  var w = s;
-  w = w.trim().replace(/\s{2,}/g, ' ');
-  w = w.replace(/T/, ' ');
-  if (!w.match(/[-/:]/)) return util._serializeDateTimeString(w);
-
+util.serializeDateTime = function(s) {
+  var w = s.trim().replace(/\s{2,}/g, ' ').replace(/T/, ' ').replace(/,/, '.');
+  if (!w.match(/[-/:]/)) return util._serializeDateTime(w);
   var prt = w.split(' ');
   var date = prt[0];
   var time = (prt[1] ? prt[1] : '');
@@ -192,7 +189,6 @@ util.serializeDateTimeString = function(s) {
   var m = util.lpad(prt[1], '0', 2);
   var d = util.lpad(prt[2], '0', 2);
   date = y + m + d;
-
   prt = time.split('.');
   var ms = '';
   if (prt[1]) {
@@ -207,15 +203,15 @@ util.serializeDateTimeString = function(s) {
   mi = util.lpad(mi, '0', 2);
   ss = util.lpad(ss, '0', 2);
   time = hh + mi + ss + ms;
-  return util._serializeDateTimeString(date + time);
+  return util._serializeDateTime(date + time);
 };
-util._serializeDateTimeString = function(s) {
-  s = s.replace(/-/g, '');
-  s = s.replace(/\s/g, '');
-  s = s.replace(/:/g, '');
-  s = s.replace(/\./g, '');
-  s = (s + '000000000').substr(0, 17);
-  return s;
+util._serializeDateTime = function(s) {
+  s = s.replace(/-/g, '').replace(/\s/g, '').replace(/:/g, '').replace(/\./g, '');
+  return (s + '000000000').substr(0, 17);
+};
+
+util.now = function() {
+  return Date.now();
 };
 
 /**
@@ -236,7 +232,7 @@ util._serializeDateTimeString = function(s) {
  * 2020/09/20 12:34:56.789 +09:00
  * -> millis from 19700101T0000Z
  */
-util.unixmillis = function(s) {
+util.getTimestamp = function(s) {
   return new util.DateTime(s).timestamp;
 };
 
@@ -264,7 +260,7 @@ util.getDateTimeString = function(t, fmt) {
  *          1 -> Tomorrow
  */
 util.getDateTimeFromTime = function(timeString, offset) {
-  var t = util.getTimeStampOfDay(timeString, offset);
+  var t = util.getTimestampOfDay(timeString, offset);
   return util.getDateTime(t);
 };
 
@@ -274,7 +270,7 @@ util.getDateTimeFromTime = function(timeString, offset) {
  *          0 -> Today (default)
  *          1 -> Tomorrow
  */
-util.getTimeStampOfDay = function(timeString, offset) {
+util.getTimestampOfDay = function(timeString, offset) {
   var tm = timeString.replace(/:/g, '').replace(/\./, '');
   var hh = tm.substr(0, 2);
   var mi = tm.substr(2, 2);
@@ -285,6 +281,30 @@ util.getTimeStampOfDay = function(timeString, offset) {
   var ts = d1.getTime();
   if (offset != undefined) ts += (offset * util.DAY);
   return ts;
+};
+
+/**
+ * Returns timestamp at 00:00 from specified timestamp.
+ * ms: timestamp in millis
+ * offset: timezone offset. -12 or '-1200' to 14 or '+1400'
+ * 1628679929040 -> 1628640000000 (offset=0)
+ */
+util.getTimestampOfMidnight = function(ms, offset) {
+  var t = util.getDateTime(ms);
+  var dt = new Date(t.year, t.month - 1, t.day);
+  var os = util.getOffsetFromLocalTz(offset);
+  return new util.DateTime(dt).timestamp - os;
+};
+
+/**
+ * Millis to clock format '1d 12:34:56.789'.
+ *
+ * fmt
+ *  '%Dd %H:%m:%S.%s'
+ *  days=auto: '%d%H:%m:%S.%s'
+ */
+util.getTimeString = function(ms, fmt) {
+  return (new util.Time(ms)).toClock(fmt);
 };
 
 /**
@@ -387,11 +407,11 @@ util.getTzName = function() {
 };
 
 /**
- * Returns TZ offset in minutes
- * +0900 ->  540
- * -0800 -> -480
+ * Returns local TZ offset in minutes
+ * at +0900 ->  540
+ * at -0800 -> -480
  */
-util.getTzOffset = function() {
+util.getLocalTzOffsetMin = function() {
   return new Date().getTimezoneOffset() * -1;
 };
 
@@ -407,11 +427,18 @@ util.tz2ms = function(tz) {
 };
 
 /**
- * +0900: +0000 -> -32400000
+ * (at +0900)
+ * '+0800' or    8 -> -3600000
+ * '+1030' or 10.5 ->  5400000
  */
-util.getTzLocalOffset = function(tz) {
-  if (!tz) return 0;
-  var ms = util.tz2ms(tz);
+util.getOffsetFromLocalTz = function(tz) {
+  if (tz == undefined) return 0;
+  var ms;
+  if (typeof tz == 'string') {
+    ms = util.tz2ms(tz);
+  } else {
+    ms = tz * 3600000;
+  }
   var os = new Date().getTimezoneOffset() * 60000;
   return os + ms;
 };
@@ -422,8 +449,8 @@ util.getTzLocalOffset = function(tz) {
  * return t1 - t0 in millis
  */
 util.difftime = function(t0, t1) {
-  t0 = util.unixmillis(t0);
-  t1 = (t1 == undefined ? Date.now() : util.unixmillis(t1));
+  t0 = util.getTimestamp(t0);
+  t1 = (t1 == undefined ? Date.now() : util.getTimestamp(t1));
   return t1 - t0;
 };
 
@@ -444,28 +471,29 @@ util.diffDays = function(ms1, ms2, abs) {
 };
 
 /**
- * Calc Estimated Time to Complete
+ * Calc Estimated Time of Accomplishment
  * t0: origin unix millis
- * val: current value
  * total: total value
+ * val: current value
+ * t1: calculation time point
  */
-util.calcETC = function(t0, val, total, now) {
-  if (now == undefined) now = Date.now();
-  var dt = now - t0;
+util.calcETA = function(t0, total, val, t1) {
+  if (t1 == undefined) t1 = Date.now();
+  var dt = t1 - t0;
   var avg = dt / val;
   var tt = Math.ceil(avg * total);
   var rt = Math.ceil(avg * (total - val));
   var r = {
-    completion: now + rt,
+    completion: t1 + rt,
     remaining: rt,
-    total: tt,
+    totaltime: tt,
     elapsed: dt,
     average: Math.ceil(dt / val)
   };
   return r;
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 /**
  * Time class
  * t:
@@ -487,21 +515,25 @@ util.Time.prototype = {
    * To clock format
    *
    * fmt
-   *  'DHMSs'
+   *  '%Dd %H:%m:%S.%s'
    */
   toClock: function(fmt) {
     var ctx = this;
-    if (!fmt) fmt = 'HMSs';
+    if (!fmt) fmt = '%d%H:%m:%S.%s';
     var d = ctx.days;
     var h = ctx.hours;
     var m = ctx.minutes;
     var s = ctx.seconds;
     var ms = ctx.milliseconds;
 
-    if (fmt.match(/D/)) h = ctx.hrs;
-    if (!fmt.match(/H/)) m += h * 60;
-    if (!fmt.match(/M/)) s += m * 60;
-    if (!fmt.match(/S/)) ms += s * 1000;
+    if (fmt.match(/%d/)) {
+      if (d > 0) h = ctx.hrs;
+    } else if (fmt.match(/%D/)) {
+      h = ctx.hrs;
+    }
+    if (!fmt.match(/%H/)) m += h * 60;
+    if (!fmt.match(/%m/)) s += m * 60;
+    if (!fmt.match(/%S/)) ms += s * 1000;
 
     d += '';
     h += '';
@@ -514,17 +546,20 @@ util.Time.prototype = {
     s = ('0' + s).slice(-2);
     ms = ('00' + ms).slice(-3);
 
-    var r = '';
-    if (fmt.match(/D/)) r += d + 'd ';
-    if (fmt.match(/H/)) r += h + ':';
-    if (fmt.match(/M/)) r += m;
-    if (fmt.match(/S/)) r += ':' + s;
-    if (fmt.match(/s/)) r += '.' + ms;
+    var r = fmt;
+    var ds = '';
+    if (fmt.match(/%d/) && (d > 0)) {
+      ds = d + 'd ';
+    } else if (fmt.match(/%D/)) {
+      ds = d;
+    }
+    r = r.replace(/%D/i, ds).replace(/%H/, h).replace(/%m/, m).replace(/%S/, s).replace(/%s/, ms);
+    if (ctx.millis < 0) r = '-' + r;
     return r;
   },
 
   /**
-   * To string the time.
+   * Returns a string representation of the object.
    *
    * 1d 23h 45m 59s
    * h:
@@ -578,25 +613,22 @@ util.Time.prototype = {
  *   1: s
  *   2: ms
  */
-util.ms2str = function(ms, mode, signed) {
+util.ms2str = function(ms, mode, unsigned) {
   var t = new util.Time(ms);
   var r = '';
+  var sn = 0;
+  if (ms < 0) {
+    sn = 1;
+    ms *= (-1);
+  }
   if (mode == 2) {
     r = t.toString(false, true);
-    if (signed) {
-      if (ms >= 0) r = '+' + r;
-    } else {
-      r = r.replace('-', '');
-    }
+    if (unsigned) r = r.replace('-', '');
     return r;
   }
   if ((mode == 1) || (ms >= 60000)) {
     r = t.toString(false, false);
-    if (signed) {
-      if (ms >= 0) r = '+' + r;
-    } else {
-      r = r.replace('-', '');
-    }
+    if (unsigned) r = r.replace('-', '');
     return r;
   }
   var ss = t.seconds;
@@ -618,23 +650,23 @@ util.ms2str = function(ms, mode, signed) {
       r += ss + '.' + msec + 's';
     }
   }
-  if (signed) r = ((ms < 0) ? '-' : '+') + r;
+  if (!unsigned) r = (sn ? '-' : '') + r;
   return r;
 };
 
-//------------------------------------------------
+//---------------------------------------------------------
 // Time Counter
-//------------------------------------------------
+//---------------------------------------------------------
 util.timecounter = {};
 util.timecounter.id = 0;
 util.timecounter.objs = {};
 /**
- * Start to display the time delta
+ * Start displaying the time delta
  *
  * opt = {
  *  interval: 500,
  *  mode: 1,
- *  signed: true,
+ *  unsigned: false,
  *  cb: null
  * }
  */
@@ -644,8 +676,9 @@ util.timecounter.start = function(el, t0, opt) {
   if (o) {
     if (t0 !== undefined) o.t0 = t0;
     if (opt.interval != undefined) o.interval = opt.interval;
-    if (opt.mode !== undefined) o.mode = opt.mode;
-    if (opt.cb !== undefined) o.cb = opt.cb;
+    if (opt.mode != undefined) o.mode = opt.mode;
+    if (opt.unsigned != undefined) o.unsigned = opt.unsigned;
+    if (opt.cb != undefined) o.cb = opt.cb;
   } else {
     o = new util.TimeCounter(el, t0, opt);
     util.timecounter.objs[o.id] = o;
@@ -654,7 +687,7 @@ util.timecounter.start = function(el, t0, opt) {
 };
 
 /**
- * Stop to display the time delta
+ * Stop displaying the time difference
  */
 util.timecounter.stop = function(el) {
   var v = 0;
@@ -668,7 +701,7 @@ util.timecounter.stop = function(el) {
 };
 
 /**
- * Returns time delta string
+ * Returns a string of time difference
  *
  * t0: from in millis / Date-Time-String
  * t1: to in millis / Date-Time-String (default=current time)
@@ -676,15 +709,15 @@ util.timecounter.stop = function(el) {
  * t1:1600000083000 - t0:1600000000000 = 83000 -> '1m 23s'
  * t1:'2020-09-20 20:01:23' - t0:'2020-09-20 20:00:00' = 83000 -> '1m 23s'
 
- * signed: false='1m 23s' / true='+1m 23s' | '-1m 23s'
+ * unsigned: true='1m 23s' / false='1m 23s' | '-1m 23s'
  */
-util.timecounter.delta = function(t0, t1, mode, signed) {
+util.timecounter.delta = function(t0, t1, mode, unsigned) {
   var ms = util.difftime(t0, t1);
-  return util.ms2str(ms, mode, signed);
+  return util.ms2str(ms, mode, unsigned);
 };
 
 /**
- * Returns the time delta value in millis
+ * Returns the time difference value in millis
  */
 util.timecounter.value = function(el) {
   var v = 0;
@@ -694,7 +727,7 @@ util.timecounter.value = function(el) {
 };
 
 /**
- * Returns the time delta string like '1m 23s'
+ * Returns a string of the time difference like '1m 23s'
  */
 util.timecounter.getText = function(el) {
   var v = 0;
@@ -702,7 +735,7 @@ util.timecounter.getText = function(el) {
   var o = util.timecounter.getObj(el);
   if (o) {
     v = o.update(o);
-    s = util.ms2str(v, o.mode, o.signed);
+    s = util.ms2str(v, o.mode, o.unsigned);
   }
   return s;
 };
@@ -720,11 +753,12 @@ util.timecounter.ids = function() {
  */
 util.TimeCounter = function(el, t0, opt) {
   if (!opt) opt = {};
+  util.copyDefaultProps(util.TimeCounter.DFLT_OPT, opt);
   this.el = el;
   this.t0 = (t0 == undefined ? Date.now() : t0);
-  this.interval = (opt.interval == undefined ? 500 : opt.interval);
-  this.mode = (opt.mode == undefined ? 1 : opt.mode);
-  this.signed = opt.signed;
+  this.interval = opt.interval;
+  this.mode = opt.mode;
+  this.unsigned = opt.unsigned;
   this.cb = opt.cb;
   this.id = '_timecounter-' + util.timecounter.id++;
 };
@@ -738,7 +772,7 @@ util.TimeCounter.prototype = {
   update: function(ctx) {
     var v = Date.now() - ctx.t0;
     var el = util.getElement(ctx.el);
-    if (el) el.innerHTML = util.ms2str(v, ctx.mode, ctx.signed);
+    if (el) el.innerHTML = util.ms2str(v, ctx.mode, ctx.unsigned);
     if (ctx.cb) ctx.cb(v);
     return v;
   },
@@ -748,10 +782,12 @@ util.TimeCounter.prototype = {
     util.IntervalProc.remove(ctx.id);
   }
 };
+util.TimeCounter.DFLT_OPT = {interval: 500, mode: 1, unsigned: false, cb: null};
 
-//------------------------------------------------
+//---------------------------------------------------------
 // Clock
-//------------------------------------------------
+// util.clock('#clock1', opt);
+//---------------------------------------------------------
 util.clock = function(el, opt) {
   var o = util.clock.getObj(el);
   if (!o) {
@@ -785,10 +821,7 @@ util.Clock = function(el, opt) {
     opt = {offset: opt};
   }
   if (!opt) opt = {};
-  if (opt.interval == undefined) opt.interval = 500;
-  if (!opt.fmt) opt.fmt = '%Y-%M-%D %W %H:%m:%S';
-  if (opt.offset == undefined) opt.offset = 0;
-  if (opt.tz == undefined) opt.tz = util.getTZ();
+  util.copyDefaultProps(util.Clock.DFLT_OPT, opt);
   this.el = el;
   this.opt = opt;
   this.interval = opt.interval;
@@ -819,10 +852,11 @@ util.Clock.prototype = {
     }
   }
 };
+util.Clock.DFLT_OPT = {interval: 500, fmt: '%Y-%M-%D %W %H:%m:%S', offset: 0, tz: util.getTZ()};
 
-//------------------------------------------------
+//---------------------------------------------------------
 // Time calculation
-//------------------------------------------------
+//---------------------------------------------------------
 /**
  * ClockTime Class
  */
@@ -972,15 +1006,15 @@ util.timecmp = function(t1, t2) {
 };
 
 // str: '[+|-]HH:MI:SS.sss'
-// '01:00'         ->    3600000
-// '01:00:30'      ->    3630000
-// '01:00:30.123'  ->    3630123
-// '0100'          ->    3600000
-// '010030'        ->    3630000
-// '010030.123'    ->    3630123
-// '100:30:45.789' ->  361845789
-// '+01:00'        ->    3600000
-// '-01:00'        ->   -3600000
+// '01:00'         ->   3600000
+// '01:00:30'      ->   3630000
+// '01:00:30.123'  ->   3630123
+// '0100'          ->   3600000
+// '010030'        ->   3630000
+// '010030.123'    ->   3630123
+// '100:30:45.789' -> 361845789
+// '+01:00'        ->   3600000
+// '-01:00'        ->  -3600000
 util.clock2ms = function(str) {
   var hour;
   var msec;
@@ -1018,7 +1052,7 @@ util.clock2ms = function(str) {
   return ms;
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // ['0000', '1200', '1530']
 // ['T0000', 'T1200', 'T1530']
 // ['00:00', '12:00', '15:30']
@@ -1051,7 +1085,7 @@ util.calcNextTime = function(times, dfltS) {
   return ret;
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 /**
  * 0.12345, 3 -> 0.123
  * 0.12345, 4 -> 0.1235
@@ -1135,7 +1169,7 @@ util.roundAngle = function(v) {
   return v;
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 /**
  * 0-2147483647
  */
@@ -1190,7 +1224,7 @@ util.randomString = function(a1, a2, a3) {
   return s;
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.fromJSON = function(j, r) {
   if (!j) return j;
   return JSON.parse(j, r);
@@ -1202,16 +1236,21 @@ util.toJSON = function(o, r, s) {
 
 util.copyProps = function(src, dst) {
   for (var k in src) {
-    dst[k] = src[k];
+    if (src[k] instanceof Object) {
+      dst[k] = {};
+      util.copyProps(src[k], dst[k]);
+    } else {
+      dst[k] = src[k];
+    }
   }
 };
 
-util.copyDefaultProps = function(tgt, dflt) {
+util.copyDefaultProps = function(dflt, tgt) {
   for (var k in dflt) {
     if (!(k in tgt)) {
       tgt[k] = dflt[k];
     } else if (tgt[k] instanceof Object) {
-      util.copyDefaultProps(tgt[k], dflt[k]);
+      util.copyDefaultProps(dflt[k], tgt[k]);
     }
   }
 };
@@ -1362,6 +1401,13 @@ util.rpad = function(str, pad, len, adj) {
   return r;
 };
 
+/**
+ * abc -> Abc
+ */
+util.capitalize = function(s) {
+  return ((s && (typeof s == 'string')) ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s);
+};
+
 util.null2empty = function(s) {
   if ((s == null) || (s == undefined)) s = '';
   return s;
@@ -1384,6 +1430,25 @@ util.countStr = function(s, p) {
 
 util.lenB = function(s) {
   return (new Blob([s], {type: 'text/plain'})).size;
+};
+
+util.split = function(v, s, l) {
+  l |= 0;
+  var r = [];
+  var p = 0;
+  var c = 0;
+  while (true) {
+    var i = v.indexOf(s, p);
+    if ((l > 0) && (c >= l - 1) || (i == -1)) {
+      r.push(v.substr(p));
+      break;
+    } else {
+      r.push(v.substring(p, i));
+      p = i + s.length;
+      c++;
+    }
+  }
+  return r;
 };
 
 util.convertNewLine = function(s, nl) {
@@ -1668,9 +1733,9 @@ util.strpTotal = function(tbl, d) {
   return n;
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // Array
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.arr = {};
 /**
  * ['A', 'B', 'C', '1', 1], 'A'
@@ -1775,7 +1840,7 @@ util.arr.prev = function(a, v) {
  * ['A', 'B', 'C', 'B', 'A', 'A']
  * -> ['A', 'B', 'C']
  */
-util.arr.toUniqueValues = function(arr, srt) {
+util.arr2set = function(arr, srt) {
   var o = util.arr.countByValue(arr, srt);
   var v = [];
   for (var k in o) {
@@ -1798,7 +1863,7 @@ util.arr.toUniqueValues = function(arr, srt) {
   return r;
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.addListItem = function(list, item) {
   if (list && !util.arr.hasValue(list, item)) list.push(item);
 };
@@ -1820,9 +1885,9 @@ util.sortObj = function(list, key, desc) {
   return list;
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // HTTP
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 /**
  *  var param = {
  *    key1: val1,
@@ -1834,6 +1899,7 @@ util.sortObj = function(list, key, desc) {
  *    method: 'POST',
  *    data: param,
  *    responseType: 'json',
+ *    timeout: 0,
  *    cb: callback,
  *    onsuccess: callback,
  *    onerror: callback
@@ -1886,6 +1952,7 @@ util.http = function(req) {
     }
   };
   xhr.open(req.method, url, req.async, req.user, req.pass);
+  if (req.timeout != undefined) xhr.timeout = req.timeout;
   var contentType = 'application/x-www-form-urlencoded';
   if (req.contentType) {
     contentType = req.contentType;
@@ -1997,6 +2064,8 @@ util.http.addListener = function(type, fn) {
   util.addListItem(util.http.listeners[type], fn);
 };
 util.http.onStart = function() {
+  util.http.t0 = Date.now();
+  util.http.sartInd();
   util.http.callListeners('start');
 };
 util.http.onSend = function(req) {
@@ -2010,6 +2079,8 @@ util.http.onReceive = function(xhr, res, req) {
 };
 util.http.onStop = function() {
   util.http.callListeners('stop');
+  util.http.stopInd();
+  util.http.t0 = 0;
 };
 util.http.onError = function(xhr, res, req) {
   util.http.callListeners('error', xhr, res, req);
@@ -2022,6 +2093,22 @@ util.http.callListeners = function(type, a1, a2, a3) {
   }
   return true;
 };
+util.http.sartInd = function() {
+  if (window.dbg) window.dbg.led.on(0);
+};
+util.http.stopInd = function() {
+  var t = 100;
+  var t1 = Date.now();
+  var d = t1 - util.http.t0;
+  if (d < t) {
+    setTimeout(util.http._stopInd, (t - d));
+  } else {
+    util.http._stopInd();
+  }
+};
+util.http._stopInd = function() {
+  if (window.dbg && (util.http.conn == 0)) window.dbg.led.off(0);
+};
 util.http.countConnections = function() {
   return util.http.conn;
 };
@@ -2033,6 +2120,7 @@ util.http.online = true;
 util.http.logging = window.dbg ? true : false;
 util.http.trace = false;
 util.http.conn = 0;
+util.http.t0 = 0;
 util.http.listeners = {
   start: [],
   send: [],
@@ -2042,9 +2130,9 @@ util.http.listeners = {
   error: []
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // Element
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 var $el = function(target, idx) {
   var el = util.getElement(target, idx);
   if (el) {
@@ -2063,37 +2151,34 @@ $el.fn = {
   html: function(html, speed) {
     if (html == undefined) return this.innerHTML;
     if (speed == undefined) speed = 0;
-    util.writeHTML(this, html, speed);
+    util.callFn4El(util.writeHTML, this, html, speed);
   },
   text: function(text, speed) {
     if (text == undefined) return this.innerText;
     var html = util.escHtml(text);
     if (speed == undefined) speed = 0;
-    util.writeHTML(this, html, speed);
+    util.callFn4El(util.writeHTML, this, html, speed);
   },
   clear: function(speed) { // Not available for <pre> on IE11
-    var el = this;
-    if (util.isTextInput(el)) {
-      el.value = '';
-    } else {
-      if (speed == undefined) speed = 0;
-      util.clearHTML(el, speed);
-    }
+    util.callFn4El(util.elClear, this, speed);
+  },
+  disable: function() {
+    util.callFn4El(util.toDisable, this);
+  },
+  enable: function() {
+    util.callFn4El(util.toEnable, this);
   },
   textseq: function(text, opt) {
-    return util.textseq(this, text, opt);
+    return util.callFn4El(util.textseq, this, text, opt);
   },
   startTextSeq: function() {
-    util.textseq.start(this);
+    util.callFn4El(util.textseq.start, this);
   },
   stopTextSeq: function() {
-    util.textseq.stop(this);
+    util.callFn4El(util.textseq.stop, this);
   },
   setStyle: function(n, v) {
     util.setStyle(this, n, v);
-  },
-  setStyles: function(n, v) {
-    util.setStyles(this, n, v);
   },
   addClass: function(n) {
     util.addClass(this, n);
@@ -2101,41 +2186,31 @@ $el.fn = {
   removeClass: function(n) {
     util.removeClass(this, n);
   },
+  toggleClass: function(n) {
+    util.toggleClass(this, n);
+  },
   hasClass: function(n) {
     return util.hasClass(this, n);
   },
   isActive: function() {
     return util.isActiveElement(this);
   },
-  center: function() {
-    util.center(this);
-  },
-  position: function(x, y) {
-    util.setPosition(this, x, y);
-  },
   blink: function(a) {
-    if (a == undefined) a = true;
-    var f = a ? util.addClass : util.removeClass;
-    f(this, 'blink');
-  },
-  blink2: function(a) {
-    if (a == undefined) a = true;
-    var f = a ? util.addClass : util.removeClass;
-    f(this, 'blink2');
+    if (a === false) {
+      util.removeClass(this, 'blink');
+      util.removeClass(this, 'blink1');
+      util.removeClass(this, 'blink2');
+      util.removeClass(this, 'blink3');
+    } else {
+      if (a == undefined) a = '';
+      util.addClass(this, 'blink' + a);
+    }
   },
   hide: function() {
-    var el = this;
-    var v = el.style.display;
-    if (v == 'none') return;
-    el.displayBak = v;
-    el.style.display = 'none';
+    util.callFn4El(util.elHide, this);
   },
   show: function() {
-    var el = this;
-    if (el.style.display != 'none') return;
-    var v = el.displayBak;
-    if (v == undefined) v = '';
-    el.style.display = v;
+    util.callFn4El(util.elShow, this);
   },
   fadeIn: function(speed, cb, arg) {
     util.fadeIn(this, speed, cb, arg);
@@ -2145,6 +2220,25 @@ $el.fn = {
   },
   getRect: function() {
     return this.getBoundingClientRect();
+  },
+  loading: function(opt, force) {
+    if (opt === false) {
+      util.loader.hide(this, force);
+    } else {
+      util.loader.show(this, opt);
+    }
+  },
+  center: function() {
+    util.callFn4El(util.center, this);
+  },
+  position: function(x, y) {
+    util.callFn4El(util.setPosition, this, x, y);
+  },
+  scrollX: function(x) {
+    return util.callFn4El(util.scrollX, this, x);
+  },
+  scrollY: function(y) {
+    return util.callFn4El(util.scrollY, this, y);
   },
   prev: function() {
     return util.prevElement(this);
@@ -2164,40 +2258,82 @@ util.getElement = function(target, idx) {
   return el;
 };
 
+util.callFn4El = function(f, el, a1, a2) {
+  var r;
+  if (el.toString() == '[object NodeList]') {
+    for (var i = 0; i < el.length; i++) {
+      r = f(el[i], a1, a2);
+    }
+  } else {
+    r = f(el, a1, a2);
+  }
+  return r;
+};
+
+util.toEnable = function(el) {
+  el.disabled = false;
+};
+util.toDisable = function(el) {
+  el.disabled = true;
+};
+
+util.elShow = function(el) {
+  if (el.style.display != 'none') return;
+  var v = el.displayBak;
+  if (v == undefined) v = '';
+  el.style.display = v;
+};
+util.elHide = function(el) {
+  var v = el.style.display;
+  if (v == 'none') return;
+  el.displayBak = v;
+  el.style.display = 'none';
+};
+
+util.elClear = function(el, speed) {
+  if (util.isTextInput(el)) {
+    el.value = '';
+  } else {
+    if (speed == undefined) speed = 0;
+    util.clearHTML(el, speed);
+  }
+};
+
 util.addClass = function(el, n) {
   el = util.getElement(el);
-  if (util.hasClass(el, n)) return;
-  if (el.className == '') {
-    el.className = n;
-  } else {
-    el.className += ' ' + n;
-  }
+  util.callFn4El(util._addClass, el, n);
+};
+util._addClass = function(el, n) {
+  el.classList.add(n);
 };
 
 util.removeClass = function(el, n) {
   el = util.getElement(el);
-  var names = el.className.split(' ');
-  var nm = '';
-  for (var i = 0; i < names.length; i++) {
-    if (names[i] != n) {
-      if (i > 0) nm += ' ';
-      nm += names[i];
-    }
-  }
-  el.className = nm;
+  util.callFn4El(util._removeClass, el, n);
+};
+util._removeClass = function(el, n) {
+  el.classList.remove(n);
+};
+
+util.toggleClass = function(el, n) {
+  el = util.getElement(el);
+  util.callFn4El(util._toggleClass, el, n);
+};
+util._toggleClass = function(el, n) {
+  el.classList.toggle(n);
 };
 
 util.hasClass = function(el, n) {
   el = util.getElement(el);
-  var names = el.className.split(' ');
-  for (var i = 0; i < names.length; i++) {
-    if (names[i] == n) return true;
-  }
-  return false;
+  return el.classList.contains(n);
 };
 
 util.isActiveElement = function(el, idx) {
-  return util.getElement(el, idx) == document.activeElement;
+  if (el.toString() != '[object NodeList]') return util.getElement(el, idx) == document.activeElement;
+  for (var i = 0; i < el.length; i++) {
+    if (util.getElement(el[i]) == document.activeElement) return true;
+  }
+  return false;
 };
 
 util.hasParent = function(el, parent) {
@@ -2268,7 +2404,7 @@ util.center = function(el) {
 
 util.setPosition = function(el, x, y) {
   var style = {left: x + 'px', top: y + 'px'};
-  util.setStyles(el, style);
+  util.setStyle(el, style);
 };
 
 util.isTextInput = function(el) {
@@ -2301,6 +2437,43 @@ util.getZoomRatio = function() {
   return Math.round(window.devicePixelRatio * 100);
 };
 
+util.scrollX = function(el, x) {
+  el = util.getElement(el);
+  if (!el) return;
+  if (x == undefined) return el.scrollLeft;
+  x += '';
+  if ((x.charAt(0) == '+') || (x.charAt(0) == '-')) {
+    x = el.scrollLeft + (x | 0);
+  } else if (x == 'left') {
+    x = 0;
+  } else if (x == 'center') {
+    el.scrollLeft = el.scrollWidth;
+    x = el.scrollLeft / 2;
+  } else if (x == 'right') {
+    x = el.scrollWidth;
+  }
+  el.scrollLeft = x;
+  return el.scrollLeft;
+};
+util.scrollY = function(el, y) {
+  el = util.getElement(el);
+  if (!el) return;
+  if (y == undefined) return el.scrollTop;
+  y += '';
+  if ((y.charAt(0) == '+') || (y.charAt(0) == '-')) {
+    y = el.scrollTop + (y | 0);
+  } else if (y == 'top') {
+    y = 0;
+  } else if (y == 'middle') {
+    el.scrollTop = el.scrollHeight;
+    y = el.scrollTop / 2;
+  } else if (y == 'bottom') {
+    y = el.scrollHeight;
+  }
+  el.scrollTop = y;
+  return el.scrollTop;
+};
+
 util.escHtml = function(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 };
@@ -2326,7 +2499,7 @@ util.getCtx4El = function(ctxs, el) {
   return ctx;
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.overlay = {};
 util.overlay.DFLT_FADE_SPEED = 250;
 util.overlay.DFLT_SHOW_OPT = {pos: 'nw', adjX: 0, adjY: 0, fade: 0};
@@ -2340,7 +2513,7 @@ util.overlay.show = function(tgt, el, opt) {
   el = util.getElement(el);
   if (!tgt || !el || tgt.contains(el)) return;
   if (!opt) opt = {};
-  util.copyDefaultProps(opt, util.overlay.DFLT_SHOW_OPT);
+  util.copyDefaultProps(util.overlay.DFLT_SHOW_OPT, opt);
   el.style.opacity = 0;
   el.style.position = 'absolute';
   if (opt.fade > 0) util.addClass(el, 'fadeout');
@@ -2398,7 +2571,7 @@ util.overlay.hide = function(tgt, el, opt) {
   el = util.getElement(el);
   if (!tgt || !el || !tgt.contains(el)) return;
   if (!opt) opt = {};
-  util.copyDefaultProps(opt, util.overlay.DFLT_HIDE_OPT);
+  util.copyDefaultProps(util.overlay.DFLT_HIDE_OPT, opt);
   var o = {el: el, tgt: tgt};
   if (opt.fade > 0) {
     util.fadeOut(el, opt.fade, util.overlay._hide, o);
@@ -2444,14 +2617,6 @@ util.fn2text = function(f, s, e) {
 };
 
 /**
- * R, G, B -> #RGB
- */
-util.rgb = function(r, g, b) {
-  var rgb = util.color.rgb10to16(r, g, b);
-  return '#' + rgb.r + rgb.g + rgb.b;
-};
-
-/**
  * http://xxx/ -> <a href="http://xxx/">http://xxx/</a>
  */
 util.linkUrls = function(s, attr) {
@@ -2462,11 +2627,23 @@ util.linkUrls = function(s, attr) {
   return s.replace(/(https?:\/\/[!#$&'()*+,/:;=?@[\]0-9A-Za-z\-._~]+)/g, t);
 };
 
+//---------------------------------------------------------
+util.color = {};
+
+/**
+ * R, G, B <-> #RGB
+ */
+util.color.rgb = function(r, g, b) {
+  if (typeof r == 'string') return util.color.rgb16to10(r);
+  var rgb = util.color.rgb10to16(r, g, b);
+  return '#' + rgb.r + rgb.g + rgb.b;
+};
+
 /**
  * R, G, B -> {h, s, v}
  * r: R or #RGB
  */
-util.rgb2hsv = function(r, g, b) {
+util.color.rgb2hsv = function(r, g, b) {
   if (typeof r == 'string') {
     var rgb = util.color.rgb16to10(r);
     r = rgb.r;
@@ -2484,7 +2661,7 @@ util.rgb2hsv = function(r, g, b) {
 /**
  * H, S, V -> {r, g, b}
  */
-util.hsv2rgb = function(h, s, v) {
+util.color.hsv2rgb = function(h, s, v) {
   var r, g, b;
   var max = v;
   var min = max - ((s / 255) * max);
@@ -2513,12 +2690,7 @@ util.hsv2rgb = function(h, s, v) {
     g = min;
     b = ((360 - h) / 60) * (max - min) + min;
   }
-  var rgb = {
-    r: Math.round(r),
-    g: Math.round(g),
-    b: Math.round(b)
-  };
-  return rgb;
+  return {r: Math.round(r), g: Math.round(g), b: Math.round(b)};
 };
 
 /**
@@ -2526,9 +2698,9 @@ util.hsv2rgb = function(h, s, v) {
  * brightness: -100-0-100
  * hue: -100-0-100
  */
-util.color = function(rgb16, brightness, hue) {
+util.color.adjust = function(rgb16, brightness, hue) {
   hue |= 0;
-  var hsv = util.rgb2hsv(rgb16);
+  var hsv = util.color.rgb2hsv(rgb16);
   var h = hsv.h + ((hue / 100) * 255);
   var s = hsv.s;
   var v = hsv.v;
@@ -2552,8 +2724,8 @@ util.color = function(rgb16, brightness, hue) {
   } else if (v > 255) {
     v = 255;
   }
-  var rgb = util.hsv2rgb(h, s, v);
-  return util.rgb(rgb.r, rgb.g, rgb.b);
+  var rgb = util.color.hsv2rgb(h, s, v);
+  return util.color.rgb(rgb.r, rgb.g, rgb.b);
 };
 
 util.color.rgb10to16 = function(r, g, b) {
@@ -2571,10 +2743,8 @@ util.color.rgb10to16 = function(r, g, b) {
     g16 = g0;
     b16 = b0;
   }
-  var rgb = {r: r16, g: g16, b: b16};
-  return rgb;
+  return {r: r16, g: g16, b: b16};
 };
-
 util.color.rgb16to10 = function(rgb16) {
   var r16, g16, b16, r10, g10, b10;
   rgb16 = rgb16.replace(/#/, '').replace(/\s/g, '');
@@ -2593,10 +2763,8 @@ util.color.rgb16to10 = function(rgb16) {
   r10 = parseInt(r16, 16);
   g10 = parseInt(g16, 16);
   b10 = parseInt(b16, 16);
-  var rgb = {r: r10, g: g10, b: b10};
-  return rgb;
+  return {r: r10, g: g10, b: b10};
 };
-
 // Hue 0-360
 util.color.getH = function(r, g, b) {
   if ((r == g) && (g == b)) return 0;
@@ -2614,7 +2782,6 @@ util.color.getH = function(r, g, b) {
   if (h < 0) h += 360;
   return Math.round(h);
 };
-
 // Saturation/Chroma 0-255
 util.color.getS = function(r, g, b) {
   var a = util.color.sortRGB(r, g, b);
@@ -2623,18 +2790,15 @@ util.color.getS = function(r, g, b) {
   var s = (max - min) / max;
   return Math.round(s * 255);
 };
-
 // Value/Brightness 0-255
 util.color.getV = function(r, g, b) {
   return util.color.sortRGB(r, g, b)[2];
 };
-
 util.color.sortRGB = function(r, g, b) {
-  var a = [r, g, b];
-  return a.sort(function(_a, _b) {return _a - _b});
+  return [r, g, b].sort(function(v1, v2) {return v1 - v2});
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.textarea = {};
 /**
  * addStatusInfo('#textarea-id', '#infoarea-id')
@@ -2702,9 +2866,9 @@ util.textarea.addListener = function(target, f) {
   }
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // Write HTML
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 /**
  * Write HTML and Fade in
  * util.writeHTML('#id', 'text');
@@ -2754,9 +2918,9 @@ util._clearHTML = function(el) {
   util.removeClass(el, 'fadeout');
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // Text Sequencer
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 /**
  * var ctx = util.textseq(el, text, opt);
  * opt: see DFLT_OPT
@@ -2766,7 +2930,7 @@ util.textseq = function(el, text, opt) {
   if (!opt) opt = {};
   var cursor = opt.cursor;
   if (typeof opt.cursor == 'number') delete opt.cursor;
-  util.copyDefaultProps(opt, util.textseq.DFLT_OPT);
+  util.copyDefaultProps(util.textseq.DFLT_OPT, opt);
   if (typeof cursor == 'number') opt.cursor.n = cursor;
   if (text instanceof Array) {
     el.$$textseqCtx = {textList: text, idx: 0, opt: opt};
@@ -2916,11 +3080,7 @@ util.textseq.createCtx = function(el, text, opt) {
   var step = opt.step;
   var cutLen = step;
   if (opt.reverse) {
-    if (opt.start == 0) {
-      var start = txtLen - 1;
-    } else {
-      start = opt.start - 1;
-    }
+    var start = ((opt.start == 0) ? txtLen - 1 : opt.start - 1);
     var end = -1;
     if (len > 0) end = start - len;
     if (end < 0) end = -1;
@@ -2929,11 +3089,7 @@ util.textseq.createCtx = function(el, text, opt) {
     var pos = start;
     if (pos < 0) pos = txtLen - 1;
   } else {
-    if (opt.start == 0) {
-      start = 0;
-    } else {
-      start = opt.start;
-    }
+    start = ((opt.start == 0) ? 0 : opt.start);
     end = txtLen;
     if (len > 0) end = start + len;
     prevPos = start;
@@ -2945,7 +3101,7 @@ util.textseq.createCtx = function(el, text, opt) {
   delete el.$$textseqSpan;
   if (opt.style && !isInp) {
     var span = document.createElement('span');
-    util.setStyles(span, opt.style);
+    util.setStyle(span, opt.style);
     el.$$textseqSpan = span;
     el.appendChild(span);
   }
@@ -2997,9 +3153,9 @@ util.textseq.print = function(ctx, s) {
 };
 util.textseq.ctxs = [];
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // Styles
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.CSS = '';
 util.STYLE = function() {/*
 .pointable:hover {
@@ -3011,10 +3167,19 @@ util.STYLE = function() {/*
 .pseudo-link:hover {
   text-decoration: underline;
 }
+.glow {
+  text-shadow: 0 0 5px;
+}
 .blink {animation: blinker 1.5s step-end infinite;}
 @keyframes blinker {
   50% {opacity: 0;}
   100% {opacity: 0;}
+}
+.blink1 {animation: blinker1 1s ease-in infinite alternate;}
+@keyframes blinker1 {
+  0% {opacity: 0;}
+  20% {opacity: 0;}
+  70% {opacity: 1;}
 }
 .blink2 {animation: blinker2 1s ease-in-out infinite alternate;}
 @keyframes blinker2 {
@@ -3087,19 +3252,24 @@ util.setupStyle = function() {
   }
 };
 
-util.setStyle = function(el, n, v) {
-  el = util.getElement(el);
-  if (el) el.style.setProperty(n, v, 'important');
+util.setStyle = function(el, a1, a2) {
+  util.callFn4El(util._setStyle, el, a1, a2);
 };
-util.setStyles = function(el, s) {
-  for (var k in s) {
-    util.setStyle(el, k, s[k]);
+util._setStyle = function(el, a1, a2) {
+  el = util.getElement(el);
+  if (!el) return;
+  if (a1 instanceof Object) {
+    for (var k in a1) {
+      el.style.setProperty(k, a1[k], 'important');
+    }
+  } else {
+    el.style.setProperty(a1, a2, 'important');
   }
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // Infotip
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.infotip = {};
 util.infotip.ST_HIDE = 0;
 util.infotip.ST_FADEIN = 1;
@@ -3306,9 +3476,9 @@ util.infotip.registerStyle = function() {
   util.registerStyle(style);
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // Tooltip
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.tooltip = {};
 util.tooltip.DELAY = 350;
 util.tooltip.offset = {x: 5, y: -8};
@@ -3383,9 +3553,9 @@ util.tooltip.setDelay = function(ms) {
   util.tooltip.DELAY = ms;
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // Fade in / out
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.registerFadeStyle = function() {
   var style = '.fadein {opacity: 1 !important;}';
   style += '.fadeout {opacity: 0 !important;}';
@@ -3445,9 +3615,9 @@ util.clearFade = function(el) {
   util.removeClass(el, 'fadeout');
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // Screen Fader
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.SCREEN_FADER_ZINDEX = 99999999;
 util.fadeScreenEl = null;
 /**
@@ -3497,13 +3667,13 @@ util.createFadeScreenEl = function(bg) {
     'background': bg,
     'z-index': util.SCREEN_FADER_ZINDEX
   };
-  util.setStyles(el, style);
+  util.setStyle(el, style);
   return el;
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // Loader Indication
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.loader = {};
 util.loader.DFLTOPT = {
   delay: 500,
@@ -3530,7 +3700,7 @@ util.loader.show = function(el, opt) {
     el = null;
   }
   if (!opt) opt = {};
-  util.copyDefaultProps(opt, util.loader.DFLTOPT);
+  util.copyDefaultProps(util.loader.DFLTOPT, opt);
   el = util.getElement(el);
   if (!el) el = document.body;
   var ctx = util.getCtx4El(util.loader.ctxs, el);
@@ -3568,7 +3738,7 @@ util.loader.create = function(opt) {
     margin: 'auto',
     animation: 'loader-rotate ' + opt.speed + ' linear infinite'
   };
-  util.setStyles(el, s);
+  util.setStyle(el, s);
   return el;
 };
 
@@ -3601,9 +3771,9 @@ util.loader._hide = function(ctx) {
   util.loader.ctxs.splice(i, 1);
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // Modal
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.MODAL_ZINDEX = 1000;
 util.modal = function(child, addCloseHandler) {
   this.sig = 'modal';
@@ -3611,7 +3781,7 @@ util.modal = function(child, addCloseHandler) {
   var style = {};
   util.copyProps(util.modal.DFLT_STYLE, style);
   if (util.modal.style) util.copyProps(util.modal.style, style);
-  util.setStyles(el, style);
+  util.setStyle(el, style);
   el.style.opacity = '0';
   if (addCloseHandler) el.addEventListener('click', this.onClick);
   if (child) el.appendChild(child);
@@ -3675,9 +3845,9 @@ util.modal.DFLT_STYLE = {
 };
 util.modal.style = null;
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // Dialog
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 /**
  * content: HTML|DOM
  *
@@ -3738,7 +3908,7 @@ util.dialog.prototype = {
       'padding': util.dialog.PADDING + 'px',
       'z-index': '1100'
     };
-    util.setStyles(base, style);
+    util.setStyle(base, style);
 
     if (opt && opt.style && opt.style.body) {
       for (var key in opt.style.body) {
@@ -3760,7 +3930,7 @@ util.dialog.prototype = {
       'vertical-align': 'middle',
       'text-align': 'center'
     };
-    util.setStyles(body, style);
+    util.setStyle(body, style);
     var title;
     var buttons;
     if (opt) {
@@ -3775,7 +3945,7 @@ util.dialog.prototype = {
         'margin-bottom': '0.5em',
         'font-weight': 'bold'
       };
-      util.setStyles(titleArea, style);
+      util.setStyle(titleArea, style);
       if (opt && opt.style && opt.style.title) {
         for (var key in opt.style.title) {
           util.setStyle(titleArea, key, opt.style.title[key]);
@@ -3786,12 +3956,8 @@ util.dialog.prototype = {
 
     var contentArea = document.createElement('pre');
     contentArea.className = 'dialog-content';
-    if (title) {
-      style = {'margin': '0'};
-    } else {
-      style = {'margin': '10px 0'};
-    }
-    util.setStyles(contentArea, style);
+    style = (title ? {'margin': '0'} : {'margin': '10px 0'});
+    util.setStyle(contentArea, style);
 
     if (typeof content == 'string') {
       contentArea.innerHTML = content;
@@ -3810,12 +3976,9 @@ util.dialog.prototype = {
       for (var i = 0; i < buttons.length; i++) {
         var button = buttons[i];
         var btnEl = document.createElement('button');
-        style = {
-          'margin-top': '1em',
-          'margin-bottom': '0',
-        };
+        style = {'margin-top': '1em', 'margin-bottom': '0'};
         if (i > 0) style['margin-left'] = '0.5em';
-        util.setStyles(btnEl, style);
+        util.setStyle(btnEl, style);
         if (opt && opt.style && opt.style.button) {
           for (key in opt.style.button) {
             util.setStyle(btnEl, key, opt.style.button[key]);
@@ -4216,9 +4379,9 @@ util.confirm = function(a1, a2, a3, a4, a5) {
   util.dialog.confirm(a1, a2, a3, a4, a5);
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // Meter
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 /**
  * target: element / selector
  * opt = {
@@ -4317,7 +4480,7 @@ util.Meter = function(target, opt) {
     border: bd,
     'border-radius': bdRd
   };
-  util.setStyles(base, style);
+  util.setStyle(base, style);
 
   var v = value / max * 100;
   var bar = document.createElement('div');
@@ -4329,7 +4492,7 @@ util.Meter = function(target, opt) {
     transition: 'all 0.25s ease-out'
   };
   if (opt && opt.transition) style.transition = opt.transition;
-  util.setStyles(bar, style);
+  util.setStyle(bar, style);
   base.appendChild(bar);
 
   var scales;
@@ -4353,7 +4516,7 @@ util.Meter = function(target, opt) {
         border: 'none',
         'border-right': ss
       };
-      util.setStyles(e, s);
+      util.setStyle(e, s);
       base.appendChild(e);
     }
   }
@@ -4377,8 +4540,8 @@ util.Meter = function(target, opt) {
       'text-align': 'center',
       'vertical-align': 'middle'
     };
-    util.setStyles(lblEl, s);
-    if (label.style) util.setStyles(lblEl, label.style);
+    util.setStyle(lblEl, s);
+    if (label.style) util.setStyle(lblEl, label.style);
     lblEl.innerHTML = label.text;
     base.appendChild(lblEl);
   }
@@ -4431,7 +4594,7 @@ util.Meter.prototype = {
     this.redraw();
   },
   setTextStyle: function(s) {
-    util.setStyles(this.lblEl, s);
+    util.setStyle(this.lblEl, s);
     this.redraw();
   },
   increase: function(v) {
@@ -4527,9 +4690,9 @@ util.Meter.buildHTML = function(val, opt) {
   return m.el.outerHTML;
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // LED
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // var led = new util.Led('#led1', opt);
 // led.on();
 // led.off();
@@ -4541,6 +4704,7 @@ util.Meter.buildHTML = function(val, opt) {
  *   color: '#0f0',
  *   offColor: '#888',
  *   shadow: '0 0 5px',
+ *   speed: 100,
  *   className: 'xxx',
  *   labelClassName: 'xxx',
  *   active: true
@@ -4549,10 +4713,7 @@ util.Meter.buildHTML = function(val, opt) {
 util.Led = function(target, opt) {
   var baseEl = util.getElement(target);
   if (!opt) opt = {};
-  if (opt.size == undefined) opt.size = '16px';
-  if (opt.color == undefined) opt.color = util.Led.DFLT_COLOR;
-  if (opt.offColor == undefined) opt.offColor = util.Led.DFLT_INACTV_COLOR;
-  if (opt.shadow == undefined) opt.shadow = '0 0 5px';
+  util.copyDefaultProps(util.Led.DFLTOPT, opt);
   var active = opt.active ? true : false;
 
   var ledEl = document.createElement('span');
@@ -4564,7 +4725,7 @@ util.Led = function(target, opt) {
     cursor: 'default'
   };
   if (opt.shadow) style['text-shadow'] = opt.shadow;
-  util.setStyles(ledEl, style);
+  util.setStyle(ledEl, style);
   ledEl.innerHTML = '&#x25CF;';
   baseEl.appendChild(ledEl);
 
@@ -4577,39 +4738,66 @@ util.Led = function(target, opt) {
   this.timerId = 0;
   this.blinkDuration = util.Led.DFLT_BLINK_DURATION;
 };
-util.Led.DFLT_COLOR = '#0f0';
-util.Led.DFLT_INACTV_COLOR = '#888';
+util.Led.DFLTOPT = {
+  size: '16px',
+  color: '#0f0',
+  offColor: '#888',
+  shadow: '0 0 5px',
+  speed: 0
+};
 util.Led.DFLT_BLINK_DURATION = 700;
 util.Led.prototype = {
-  on: function(color) {
+  on: function(a1, a2) {
+    var color = a1;
+    var speed = a2;
+    if (typeof a1 == 'number') {
+      color = '';speed = a1;
+    }
     var ctx = this;
     ctx._stopBlink();
     if (color) ctx.opt.color = color;
     ctx.active = true;
-    ctx._on(ctx);
+    ctx._on(ctx, speed);
   },
-  off: function(color) {
+  off: function(a1, a2) {
+    var color = a1;
+    var speed = a2;
+    if (typeof a1 == 'number') {
+      color = '';speed = a1;
+    }
     var ctx = this;
     ctx._stopBlink();
     if (color) ctx.opt.offColor = color;
     ctx.active = false;
-    ctx._off(ctx);
+    ctx._off(ctx, speed);
   },
-  toggle: function() {
+  toggle: function(speed) {
     var ctx = this;
     if (ctx.active) {
-      ctx.off();
+      ctx.off(speed);
     } else {
-      ctx.on();
+      ctx.on(speed);
     }
   },
-  _on: function(ctx) {
+  _on: function(ctx, speed) {
     ctx.lighted = true;
-    util.setStyle(ctx.ledEl, 'color', ctx.opt.color);
+    if (speed == undefined) speed = ctx.opt.speed;
+    speed = (speed ? (speed / 1000) : 0);
+    var style = {
+      color: ctx.opt.color,
+      transition: 'all ' + speed + 's ease-out'
+    };
+    util.setStyle(ctx.ledEl, style);
   },
-  _off: function(ctx) {
+  _off: function(ctx, speed) {
     ctx.lighted = false;
-    util.setStyle(ctx.ledEl, 'color', ctx.opt.offColor);
+    if (speed == undefined) speed = ctx.opt.speed;
+    speed = (speed ? (speed / 1000) : 0);
+    var style = {
+      color: ctx.opt.offColor,
+      transition: 'all ' + speed + 's ease-in'
+    };
+    util.setStyle(ctx.ledEl, style);
   },
   blink: function(d) {
     var ctx = this;
@@ -4692,9 +4880,9 @@ util.Led.prototype = {
   }
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // Form
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.submit = function(url, method, params, uriEnc) {
   var form = document.createElement('form');
   form.action = url;
@@ -4716,9 +4904,9 @@ util.postSubmit = function(url, params, uriEnc) {
   util.submit(url, 'POST', params, uriEnc);
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // URL / Query
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.getProtocol = function() {
   return location.protocol;
 };
@@ -4754,9 +4942,34 @@ util.getUrlHash = function() {
   return s;
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
+// Language
+//---------------------------------------------------------
+util.getClientLanguage = function(f) {
+  var v = navigator.language;
+  if (f) v = v.replace(/-.*/, '');
+  return v;
+};
+
+util.getClientLanguages = function(f) {
+  var v = navigator.languages;
+  var a = [];
+  if (!v) v = [navigator.language];
+  for (var i = 0; i < v.length; i++) {
+    a[i] = v[i];
+  }
+  if (f) {
+    for (i = 0; i < a.length; i++) {
+      a[i] = a[i].replace(/-.*/, '');
+    }
+    a = util.arr2set(a);
+  }
+  return a;
+};
+
+//---------------------------------------------------------
 // Browser
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.getBrowserType = function(ua) {
   if (ua == undefined) ua = navigator.userAgent;
   var ver;
@@ -4796,16 +5009,6 @@ util.getBrowserType = function(ua) {
     brws.family = 'IE';
     return brws;
   }
-  if (ua.indexOf('Trident/6.') >= 1) {
-    brws.name = 'IE10';
-    brws.family = 'IE';
-    return brws;
-  }
-  if (ua.indexOf('Trident/5.') >= 1) {
-    brws.name = 'IE9';
-    brws.family = 'IE';
-    return brws;
-  }
   if ((ua.indexOf('Safari/') >= 1) && (ua.indexOf('Version/') >= 1)) {
     brws.name = 'Safari';
     ver = ua.match(/Version\/(.*)\sSafari/);
@@ -4837,37 +5040,19 @@ util.getColoredBrowserName = function(n, dark) {
       }
       break;
     case 'Edge Legacy':
-      if (dark) {
-        c = '#0af';
-      } else {
-        c = '#08d';
-      }
+      c = (dark ? '#0af' : '#08d');
       s = '<span style="color:' + c + '">Edge</span>';
       break;
     case 'Firefox':
-      if (dark) {
-        c = '#e57f25';
-      } else {
-        c = '#e60';
-      }
+      c = (dark ? '#e57f25' : '#e60');
       s = '<span style="color:' + c + '">' + n + '</span>';
       break;
     case 'Opera':
-      if (dark) {
-        c = '#f44';
-      } else {
-        c = '#ff1b2c';
-      }
+      c = (dark ? '#f44' : '#ff1b2c');
       s = '<span style="color:' + c + '">' + n + '</span>';
       break;
     case 'IE11':
-    case 'IE10':
-    case 'IE9':
-      if (dark) {
-        c = '#61d5f8';
-      } else {
-        c = '#0af';
-      }
+      c = (dark ? '#61d5f8' : '#0af');
       s = '<span style="color:' + c + '">' + n + '</span>';
       break;
     case 'Safari':
@@ -4880,9 +5065,9 @@ util.getColoredBrowserName = function(n, dark) {
   return s;
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // Base64
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.Base64 = {};
 util.Base64.encode = function(arr) {
   var len = arr.length;
@@ -4959,9 +5144,9 @@ util.decodeBase64 = function(s) {
   return r;
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // UTF-8
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.UTF8 = {};
 util.UTF8.toByteArray = function(s) {
   var a = [];
@@ -4991,9 +5176,9 @@ util.UTF8.fromByteArray = function(b) {
   return decodeURIComponent(e);
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // bit operation
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.bit8 = {};
 util.bit8.rotateL = function(v, n) {
   n = n % 8;
@@ -5007,9 +5192,9 @@ util.bit8.invert = function(v) {
   return (~v) & 255;
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // BSB64
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.encodeBSB64 = function(s, n) {
   var a = util.UTF8.toByteArray(s);
   return util.BSB64.encode(a, n);
@@ -5046,9 +5231,9 @@ util.BSB64.decode = function(s, n) {
   return a;
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // Ring Buffer
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.RingBuffer = function(len) {
   this.buffer = new Array(len);
   this.len = len;
@@ -5113,9 +5298,9 @@ util.RingBuffer.prototype = {
   }
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // Console
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 /**
  * opt = {
  *   bufsize: 10,
@@ -5263,9 +5448,9 @@ util.Console.prototype = {
   }
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // Counter
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 /**
  * opt: see util.Counter.DFLTOPT
  */
@@ -5276,7 +5461,7 @@ util.Counter = function(el, opt) {
   var ctx = this;
   el = util.getElement(el);
   if (!opt) opt = {};
-  util.copyDefaultProps(opt, util.Counter.DFLTOPT);
+  util.copyDefaultProps(util.Counter.DFLTOPT, opt);
   if (typeof opt.duration == 'number') {
     opt.duration = {min: opt.duration, max: opt.duration};
   }
@@ -5444,16 +5629,16 @@ util.Counter.prototype = {
   }
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // Interval Proc
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // Start  : util.IntervalProc.start('<PROC_ID>', fn, 1000, ARG, [async(true|false)]);
 // Stop   : util.IntervalProc.stop('<PROC_ID>');
 // Restart: util.IntervalProc.start('<PROC_ID>');
 //
 // Async:
 // -> call in fn: util.IntervalProc.next('<PROC_ID>');
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.IntervalProc = {};
 
 // proc = {
@@ -5514,7 +5699,7 @@ util.IntervalProc._stop = function(p) {
 };
 
 /**
- * Sets a timer which executes an intefval proc function.
+ * Sets a timer which executes an interval proc function.
  */
 util.IntervalProc.next = function(id, interval) {
   var p = util.IntervalProc.procs[id];
@@ -5548,9 +5733,9 @@ util.IntervalProc.ids = function() {
   return util.objKeys(util.IntervalProc.procs);
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // Events
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // NAMESPACE.cb = function(ev) {
 //   log(ev);
 // }
@@ -5559,7 +5744,7 @@ util.IntervalProc.ids = function() {
 //
 // var data = {msg: 'abc'};
 // util.event.send('EVENT_NAME', data);
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.event = {};
 util.event.listeners = {};
 util.event.events = [];
@@ -5596,9 +5781,9 @@ util.event.callListeners = function(listeners, e) {
   }
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 // Geo Location
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.geo = {};
 util.geo.DFLT_OPT = {
   enableHighAccuracy: true,
@@ -5717,7 +5902,7 @@ util.isForwardMovement = function(azimuth, heading, range) {
   return false;
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.onMouseMove = function(e) {
   var x = e.clientX;
   var y = e.clientY;
@@ -5727,7 +5912,7 @@ util.onMouseMove = function(e) {
   util.tooltip.onMouseMove(x, y);
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.keyHandlers = {down: [], press: [], up: []};
 
 /**
@@ -5791,7 +5976,7 @@ util.addCtrlKeyHandler = function(k, fn) {
   util.addKeyHandler('down', k, fn, {ctrl: true, shift: false, alt: false, meta: false});
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 /**
  * cb = function(data, file)
  * opt = {
@@ -5965,7 +6150,7 @@ util.isTargetEl = function(el, tgt) {
   return false;
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util._log = function(o) {
   if (window.log) window.log(o);
 };
@@ -5985,7 +6170,7 @@ util._log.e = function(o) {
   if (window.log) window.log.e(o);
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.onReady = function() {
   util.setupStyle();
 };
@@ -6048,7 +6233,7 @@ util.$onScroll = function(e) {
   if (fn) fn(e);
 };
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 var $dbg = {};
 util.debug = 0;
 
@@ -6071,7 +6256,7 @@ util.getElRelObj = function(objs, el) {
 
 util.nop = function() {};
 
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------
 util.init = function() {
   try {
     if (typeof window.localStorage != 'undefined') util.LS_AVAILABLE = true;
