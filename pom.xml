@@ -8,6 +8,7 @@
   <packaging>war</packaging>
 
   <name>webclp</name>
+  <description>For easy exchange of text and files</description>
   <url>https://takashiharano.com/</url>
 
   <properties>
@@ -90,7 +91,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-war-plugin</artifactId>
-        <version>3.2.3</version>
+        <version>3.3.2</version>
         <configuration>
           <archive>
             <manifestEntries>
@@ -110,13 +111,10 @@
       <scope>provided</scope>
     </dependency>
 
-    <!-- WEB-INF/lib -->
     <dependency>
-      <groupId>com.takashiharano</groupId>
+      <groupId>com.libutil</groupId>
       <artifactId>util</artifactId>
-      <version>0.0.1</version>
-      <scope>system</scope>
-      <systemPath>${basedir}/src/main/webapp/WEB-INF/lib/util.jar</systemPath>
+      <version>1.0.0</version>
     </dependency>
   </dependencies>
 </project>
