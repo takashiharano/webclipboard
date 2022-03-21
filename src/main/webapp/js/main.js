@@ -28,7 +28,7 @@ main.onReady = function() {
   main.uploadButton.addEventListener('click', main.confirmUpload);
 
   util.textarea.addStatusInfo(main.textArea, main.textInfoArea);
-  util.addKeyHandler('down', 83, main.onCtrlS, {ctrl: true});
+  util.addKeyHandler(83, 'down', main.onCtrlS, {ctrl: true});
 
   main.init();
 };
