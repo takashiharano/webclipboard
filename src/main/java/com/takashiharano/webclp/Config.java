@@ -38,6 +38,7 @@ public class Config {
    * property is not found.
    *
    * @param key
+   *          Key
    * @return the value in this property list with the specified key value.
    */
   public String getValue(String key) {
@@ -189,7 +190,7 @@ public class Config {
    *
    * @param key
    *          key
-   * @param defaultValue
+   * @param trueValue
    *          the value if specified key is not found
    * @return the value in this property list with the specified key value.
    */

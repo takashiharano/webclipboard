@@ -134,8 +134,12 @@ public class AppManager {
    * Returns the contents of MANIFEST.MF.
    *
    * @param context
+   *          Process Context
    * @param name
-   * @return
+   *          Name
+   * @return The value associated with the name
+   * @throws IOException
+   *           If an I/O error occurs
    */
   public static String getManifestEntry(ProcessContext context, String name) throws IOException {
     ServletContext servletContext = context.getServletContext();
@@ -154,7 +158,10 @@ public class AppManager {
    * Returns version info from MANIFEST.MF.
    *
    * @param context
-   * @return
+   *          Process Context
+   * @return version info
+   * @throws IOException
+   *           If an I/O error occurs
    */
   public static String getVersionInfo(ProcessContext context) throws IOException {
     String buildTime = getManifestEntry(context, "Build-Timestamp");
