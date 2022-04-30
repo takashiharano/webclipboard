@@ -37,7 +37,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-javadoc-plugin</artifactId>
-        <version>3.2.0</version>
+        <version>3.4.0</version>
         <configuration>
           <author>true</author>
           <source>1.8</source>
@@ -46,6 +46,7 @@
           <charset>UTF-8</charset>
           <docencoding>UTF-8</docencoding>
           <locale>en_US</locale>
+          <sourcepath>${basedir}/src/main/java</sourcepath>
         </configuration>
         <executions>
           <execution>
@@ -60,7 +61,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.8.1</version>
+        <version>3.10.1</version>
         <configuration>
           <compilerVersion>${java.version}</compilerVersion>
           <source>${java.version}</source>
@@ -71,7 +72,7 @@
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>build-helper-maven-plugin</artifactId>
-        <version>3.2.0</version>
+        <version>3.3.0</version>
         <executions>
           <execution>
             <id>timestamp-property</id>
@@ -114,7 +115,7 @@
     <dependency>
       <groupId>com.libutil</groupId>
       <artifactId>util</artifactId>
-      <version>1.4.0</version>
+      <version>1.5.0</version>
     </dependency>
   </dependencies>
 </project>
