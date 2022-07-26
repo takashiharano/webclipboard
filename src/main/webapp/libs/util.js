@@ -5,7 +5,7 @@
  * https://libutil.com/
  */
 var util = util || {};
-util.v = '202203092225';
+util.v = '202207220000';
 
 util.SYSTEM_ZINDEX_BASE = 0x7ffffff0;
 util.DFLT_FADE_SPEED = 500;
@@ -350,8 +350,7 @@ util.getTimestampOfMidnight = function(dt, offset) {
   var t = ((typeof dt == 'number') ? util.getDateTime(ms) : dt);
   var d = new Date(t.year, t.month - 1, t.day);
   var r = new util.DateTime(d).timestamp;
-  r -= os;
-  return r;
+  return r - os;
 };
 
 /**
@@ -1253,20 +1252,20 @@ util._shift = function(num, scale, reverseShift) {
 // 123.45, 1 -> '123.5'
 // type: 0=floor / 1=round / 2=ceil
 // zero: true=0 / false=0.0
-util.decimalAlignment = function(v, scale, type, zero) {
+util.alignDecimal = function(v, scale, type, zero) {
   var F = [util.floor, util.round, util.ceil];
   var f = F[type | 0];
   if (!f) f = F[0];
   v = f(v, scale);
   if (zero && v == 0) return 0;
-  return util.decimalPadding(v, scale);
+  return util.alignDecimalZero(v, scale);
 };
 
 // 123  , 1 -> '123.0'
 // 123  , 2 -> '123.00'
 // 123.4, 1 -> '123.4'
 // 123.4, 2 -> '123.40'
-util.decimalPadding = function(v, scale) {
+util.alignDecimalZero = function(v, scale) {
   var r = v + '';
   if (scale == undefined) scale = 1;
   if (scale <= 0) return r;
@@ -1326,7 +1325,6 @@ util.isNumeric = function(s) {
   return (util.isInteger(s) || util.isFloat(s));
 };
 
-
 /**
  * 360 -> 0
  * 361 -> 1
@@ -1336,6 +1334,23 @@ util.roundAngle = function(v) {
   if (v < 0) v = 360 + (v % 360);
   if (v >= 360) v = v % 360;
   return v;
+};
+
+util.isNumber = function(ch) {
+  var c = ch.charCodeAt(0);
+  return ((c >= 0x30) && (c <= 0x39));
+};
+util.isAlphabet = function(ch) {
+  var c = ch.charCodeAt(0);
+  return (((c >= 0x41) && (c <= 0x5A)) || ((c >= 0x61) && (c <= 0x7A)));
+};
+util.isUpperCase = function(ch) {
+  var c = ch.charCodeAt(0);
+  return ((c >= 0x41) && (c <= 0x5A));
+};
+util.isLowerCase = function(ch) {
+  var c = ch.charCodeAt(0);
+  return ((c >= 0x61) && (c <= 0x7A));
 };
 
 //---------------------------------------------------------
@@ -1644,8 +1659,8 @@ util.convertNewLine = function(s, nl) {
 };
 
 util.toHalfWidth = function(s) {
-  var h = s.replace(/　/g, ' ').replace(/”/g, '"').replace(/’/g, '\'').replace(/‘/g, '`').replace(/￥/g, '\\');
-  h = h.replace(/[！-～]/g, util.shift2half);
+  var h = s.replace(/\u3000/g, ' ').replace(/\u201D/g, '"').replace(/\u2019/g, '\'').replace(/\u2018/g, '`').replace(/\uFFE5/g, '\\');
+  h = h.replace(/[\uFF01-\uFF5E]/g, util.shift2half);
   return h;
 };
 util.shift2half = function(w) {
@@ -1653,7 +1668,7 @@ util.shift2half = function(w) {
 };
 
 util.toFullWidth = function(s) {
-  var f = s.replace(/ /g, '　').replace(/"/g, '”').replace(/'/g, '’').replace(/`/g, '‘').replace(/\\/g, '￥');
+  var f = s.replace(/ /g, '\u3000').replace(/"/g, '\u201D').replace(/'/g, '\u2019').replace(/`/g, '\u2018').replace(/\\/g, '\uFFE5');
   f = f.replace(/[!-~]/g, util.shift2full);
   return f;
 };
@@ -1664,6 +1679,38 @@ util.shift2full = function(w) {
 util.toSingleSP = function(s) {
   if (!s) return s;
   return s.replace(/ {2,}/g, ' ');
+};
+
+util.alignFields = function(s, dlmt, n) {
+  var a = util.text2list(s);
+  if (!n) n = 1;
+  var d = ' ';
+  var c = [];
+  for (var i = 0; i < a.length; i++) {
+    var l = a[i].split(dlmt);
+    for (var j = 0; j < l.length; j++) {
+      var b = util.lenW(l[j]);
+      if ((c[j] | 0) < b) c[j] = b;
+    }
+  }
+  var r = '';
+  for (i = 0; i < a.length; i++) {
+    l = a[i].split(dlmt);
+    for (j = 0; j < l.length - 1; j++) {
+      r += util.rpad(l[j], d, c[j] + n);
+    }
+    r += l[j] + '\n';
+  }
+  return r;
+};
+util.lenW = function(s) {
+  var n = 0;
+  for (var i = 0; i < s.length; i++) {
+    var p = String.prototype.codePointAt ? s.codePointAt(i) : s.charCodeAt(i);
+    n += ((p <= 0x7F) || ((p >= 0xFF61) && (p <= 0xFF9F))) ? 1 : 2;
+    if (p >= 0x10000) i++;
+  }
+  return n;
 };
 
 util.getUnicodePoints = function(str) {
@@ -1686,6 +1733,15 @@ util.getCodePoint = function(c, hex) {
   }
   if (hex) p = util.toHex(p, true, 0, '');
   return p;
+};
+
+util.countLineBreak = function(s) {
+  return (s.match(/\n/g) || []).length;
+};
+util.clipTextLine = function(s, p) {
+  var n = s.indexOf('\n', p);
+  if (n > 0) s = s.substr(0, n);
+  return s.replace(/.*\n/g, '');
 };
 
 util.toBin = function(v, uc, d, pFix) {
@@ -1765,34 +1821,21 @@ util.trimTrailingZeros = function(s) {
  * sp=true: '1 K'
  */
 util.convByte = function(v, sep, sp) {
-  var K = 1024;
-  var M = 1048576;
-  var G = 1073741824;
-  var T = 1099511627776;
-  var P = 1125899906842624;
+  var U = ['', 'K', 'M', 'G', 'T', 'P'];
   var b = v;
   var u = '';
-  if (v >= P) {
-    b = v / P;
-    u = 'P';
-  } else if (v >= T) {
-    b = v / T;
-    u = 'T';
-  } else if (v >= G) {
-    b = v / G;
-    u = 'G';
-  } else if (v >= M) {
-    b = v / M;
-    u = 'M';
-  } else if (v >= K) {
-    b = v / K;
-    u = 'K';
+  for (var i = 5; i >= 1; i--) {
+    var c = Math.pow(1024, i);
+    if (v >= c) {
+      b = v / c;
+      u = U[i];
+      break;
+    }
   }
   var r = util.floor(b, 1);
   if (sep) r = util.formatNumber(r);
   if (sp && u) r += ' ';
-  r += u;
-  return r;
+  return r + u;
 };
 
 util.plural = function(s, n, f) {
@@ -1833,23 +1876,27 @@ util.A2Z = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
  *   1  -> 'A'
  *   2  -> 'B'
  *  26  -> 'Z'
- *  27  -> 'AA'
  * 'A'  ->  1
  * 'B'  ->  2
  * 'Z'  -> 26
- * 'AA' -> 27
  */
-util.xlsCol = function(c) {
-  var f = (isNaN(c) ? util.xlsColA2N : util.xlsColN2A);
+util.xlscol = function(c, o) {
+  if (o != undefined) return util.xlscolShift(c, o);
+  var f = (isNaN(c) ? util.xlscolA2N : util.xlscolN2A);
   return f(c);
 };
-util.xlsColA2N = function(c) {
+util.xlscolA2N = function(c) {
   return util.strpIndex(util.A2Z, c.trim().toUpperCase());
 };
-util.xlsColN2A = function(n) {
+util.xlscolN2A = function(n) {
   var a = util.strp(util.A2Z, n);
   if (n <= 0) a = '';
   return a;
+};
+util.xlscolShift = function(c, o) {
+  var n = util.xlscolA2N(c);
+  if (n == 0) return '';
+  return util.xlscolN2A(n + o);
 };
 
 /**
@@ -3034,25 +3081,45 @@ util.updateTextAreaInfo = function(textarea) {
   var txt = textarea.value;
   var len = txt.length;
   var lenB = util.lenB(txt);
-  var lfCnt = (txt.match(/\n/g) || []).length;
-  var lenWoLf = len - lfCnt;
+  var lfCnt = util.countLineBreak(txt);
+  var chrs = len - lfCnt;
+  var tl = (len == 0 ? 0 : lfCnt + 1);
   var st = textarea.selectionStart;
   var ed = textarea.selectionEnd;
   var sl = ed - st;
   var ch = util.divideChars(txt)[st] || '';
-  var cd = util.getCodePoint(ch);
-  var cd16 = util.getUnicodePoints(ch, true);
-  var cp = '';
-  if (cd) cp = (cd == 10 ? 'LF' : ch) + ':' + cd16 + '(' + cd + ')';
-  var slct = (sl ? 'Selected=' + sl : '');
+  var u10 = util.getCodePoint(ch);
+  var u16 = util.getUnicodePoints(ch, true);
+  var CTCH = {0: 'NUL', 9: 'TAB', 10: 'LF', 11: 'ESC', 32: 'SP', 127: 'DEL', 12288: 'emSP'};
+  if (isNaN(u10)) {
+    ch = '[END]';
+    u16 = 'U+----';
+  } else if (CTCH[u10]) {
+    ch = CTCH[u10];
+  }
   if (textarea.infoarea) {
-    textarea.infoarea.innerText = 'LEN=' + lenWoLf + ' (w/RET=' + len + ') ' + lenB + ' bytes ' + cp + ' ' + slct;
+    var cp = ch + '&nbsp;' + u16 + (u10 ? '(' + u10 + ')' : '');
+    var t = txt.substr(0, st);
+    var l = (t.match(/\n/g) || []).length + 1;
+    var c = t.replace(/.*\n/g, '').length + 1;
+    var tc = util.clipTextLine(txt, st).length;
+    var slT = txt.substring(st, ed);
+    var slL = util.countLineBreak(slT) + 1;
+    var slct = (sl ? ' SEL:' + ('LEN=' + sl + '/L=' + slL) : '');
+    var s = cp;
+    s += ' ' + l + ':' + c + ' ';
+    s += ' C=' + tc + ' L=' + tl;
+    s += ' LEN=' + len;
+    s += ' CHARS=' + chrs;
+    s += ' bytes=' + lenB;
+    textarea.infoarea.innerHTML = s + slct;
   }
   var listener = textarea.listener;
   if (listener) {
     var data = {
-      codePoint: cd,
-      chr: ch,
+      cp10: u10,
+      cp16: u10,
+      ch: ch,
       len: len,
       lenB: lenB,
       start: st,
@@ -4948,16 +5015,13 @@ util.Window.enableTextSelect = function() {
   document.onselectstart = util.Window.savedFunc;
 };
 util.Window.isMovable = function(el) {
-  if (el.nodeName == 'INPUT') return false;
-  if (el.nodeName == 'TEXTAREA') return false;
-  if (util.hasClass(el, 'win-nomove')) return false;
+  if ((el.nodeName == 'INPUT') || (el.nodeName == 'TEXTAREA') || (util.hasClass(el, 'win-nomove'))) return false;
   return true;
 };
 
 util.Window.onMouseMove = function(x, y) {
   var ctx = util.Window.activeWinCtx;
-  if (!ctx) return;
-  ctx.onPointerMove(ctx, x, y);
+  if (ctx) ctx.onPointerMove(ctx, x, y);
 };
 
 util.Window.onPointerUp = function() {
@@ -6342,6 +6406,80 @@ util.getColoredBrowserName = function(n, dark) {
 };
 
 //---------------------------------------------------------
+// ROTx
+//---------------------------------------------------------
+util.rot5 = function(s, n) {
+  if (n == null) n = 5;
+  n |= 0;
+  if ((n < -9) || (n > 9)) n = n % 10;
+  var r = '';
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charAt(i);
+    var cc = c.charCodeAt(0);
+    if (util.isNumber(c)) {
+      cc += n;
+      if (cc > 0x39) {
+        cc = 0x2F + (cc - 0x39);
+      } else if (cc < 0x30) {
+        cc = 0x3A - (0x30 - cc);
+      }
+    }
+    r += String.fromCharCode(cc);
+  }
+  return r;
+};
+util.rot13 = function(s, n) {
+  if (n == null) n = 13;
+  n |= 0;
+  if ((n < -25) || (n > 25)) n = n % 26;
+  var r = '';
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charAt(i);
+    var cc = c.charCodeAt(0);
+    if (util.isAlphabet(c)) {
+      cc += n;
+      if (util.isUpperCase(c)) {
+        if (cc > 0x5A) {
+          cc = 0x40 + (cc - 0x5A);
+        } else if (cc < 0x41) {
+          cc = 0x5B - (0x41 - cc);
+        }
+      } else if (util.isLowerCase(c)) {
+        if (cc > 0x7A) {
+          cc = 0x60 + (cc - 0x7A);
+        } else if (cc < 0x61) {
+          cc = 0x7B - (0x61 - cc);
+        }
+      }
+    }
+    r += String.fromCharCode(cc);
+  }
+  return r;
+};
+util.rot18 = function(s, n) {
+  return util.rot5(util.rot13(s, n), n);
+};
+util.rot47 = function(s, n) {
+  if (n == null) n = 47;
+  n |= 0;
+  if ((n < -93) || (n > 93)) n = n % 94;
+  var r = '';
+  for (var i = 0; i < s.length; i++) {
+    var cc = s.charCodeAt(i);
+    if ((cc >= 0x21) && (cc <= 0x7E)) {
+      if (n < 0) {
+        cc += n;
+        if (cc < 0x21) cc = 0x7F - (0x21 - cc);
+      } else {
+        cc = ((cc - 0x21 + n) % 94) + 0x21;
+      }
+    }
+    r += String.fromCharCode(cc);
+  }
+  return r;
+};
+
+//---------------------------------------------------------
 // Base64
 //---------------------------------------------------------
 util.Base64 = {};
@@ -6842,7 +6980,7 @@ util.Counter.prototype = {
     if (ctx.scale == 0) {
       v++;
     } else {
-      v = util.decimalAlignment(v, ctx.scale).replace('.', '');
+      v = util.alignDecimal(v, ctx.scale).replace('.', '');
       v = parseInt(v) + 1;
       var s = v + '';
       v = s.substr(0, s.length - ctx.scale) + '.' + s.slice(ctx.scale * (-1));
@@ -6855,7 +6993,7 @@ util.Counter.prototype = {
     if (ctx.scale == 0) {
       v--;
     } else {
-      v = util.decimalAlignment(v, ctx.scale).replace('.', '');
+      v = util.alignDecimal(v, ctx.scale).replace('.', '');
       v = parseInt(v);
       if (v <= 0) {
         v = v * (-1) + 1;
@@ -6889,7 +7027,7 @@ util.Counter.prototype = {
   },
   print: function(ctx, v) {
     var s = v;
-    if (ctx.scale > 0) s = util.decimalPadding(s, ctx.scale);
+    if (ctx.scale > 0) s = util.alignDecimalZero(s, ctx.scale);
     if (ctx.fmt && ((v >= 1000) || (v <= 1000))) s = util.formatNumber(s);
     ctx._print(ctx, ctx.pfx + s + ctx.sfx);
     if (ctx.cb) ctx.cb(v);
