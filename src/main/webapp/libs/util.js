@@ -5,7 +5,7 @@
  * https://libutil.com/
  */
 var util = util || {};
-util.v = '202207220000';
+util.v = '202210300048';
 
 util.SYSTEM_ZINDEX_BASE = 0x7ffffff0;
 util.DFLT_FADE_SPEED = 500;
@@ -55,12 +55,13 @@ util.DateTime = function(src, tzOffset) {
   } else if (src instanceof Date) {
     dt = src;
   } else {
+    if (util.isFloat(src)) src *= 1000;
     dt = new Date(src);
   }
   var timestamp = dt.getTime();
 
   if (tzOffset == undefined) {
-    tzOffset = ((st && st.tz) ? st.tz : util.getTZ());
+    tzOffset = ((st && st.tz) ? st.tz : util.getLocalTZ());
   } else {
     var os = tzOffset;
     if (typeof os == 'string') os = util.getOffsetFromLocalTz(os);
@@ -155,7 +156,7 @@ util.DateTime.prototype = {
     r = r.replace(/%s/g, s);
     r = r.replace(/%z/g, this.getTZ());
     r = r.replace(/%Z/g, this.getTZ(true));
-    r = r.replace(/%N/g, util.getTzName());
+    r = r.replace(/%N/g, util.getLocalTzName());
     r = r.replace(/\\/g, '');
     return r;
   }
@@ -354,23 +355,36 @@ util.getTimestampOfMidnight = function(dt, offset) {
 };
 
 /**
- * Returns time zone offset string from minutes
+ * Returns time zone offset string from hours/minutes
+ * -8         -> -0800
+ *  9         -> +0900
+ *  9, true   -> +09:00
  * -480       -> -0800
  *  540       -> +0900
  *  540, true -> +09:00
  */
 util.formatTZ = function(v, e) {
-  v |= 0;
   var s = '+';
+  v = parseFloat(v);
   if (v < 0) {
     s = '-';
     v *= -1;
   }
-  var h = (v / 60) | 0;
-  var m = v - h * 60;
-  var str = s + ('0' + h).slice(-2) + ('0' + m).slice(-2);
+  var f = ((v <= 24) ? util.formatTzH : util.formatTzM);
+  var str = s + f(v);
   if (e) str = str.substr(0, 3) + ':' + str.substr(3, 2);
   return str;
+};
+util.formatTzH = function(v) {
+  var w = ('' + v).split('.');
+  var h = +w[0];
+  var m = +('0.' + (w[1] | 0)) * 60;
+  return ('0' + h).slice(-2) + ('0' + m).slice(-2);
+};
+util.formatTzM = function(v) {
+  var h = (v / 60) | 0;
+  var m = v - h * 60;
+  return ('0' + h).slice(-2) + ('0' + m).slice(-2);
 };
 
 /**
@@ -412,6 +426,7 @@ util.clock2hours = function(s) {
  * 9.5, ':' -> '09:30'
  */
 util.hours2clock = function(s, sep) {
+  if (sep == undefined) sep = ':';
   s += '';
   var sign = '';
   if (s.match(/^[+-]/)) {
@@ -433,15 +448,22 @@ util.hours2clock = function(s, sep) {
  * +0900
  * ext=true: +09:00
  */
-util.getTZ = function(ext) {
+util.getLocalTZ = function(ext) {
   return util.formatTZ(new Date().getTimezoneOffset() * (-1), ext);
+};
+
+/**
+ * Returns local time zone offset value
+ */
+util.getLocalTzVal = function() {
+  return util.clock2hours(util.getLocalTZ());
 };
 
 /**
  * Returns TZ database name
  * i.e., America/Los_Angeles
  */
-util.getTzName = function() {
+util.getLocalTzName = function() {
   var n = Intl.DateTimeFormat().resolvedOptions().timeZone;
   if (!n) n = '';
   return n;
@@ -818,6 +840,17 @@ util.timecounter.stop = function(el) {
   return v;
 };
 
+util.timecounter.restart = function(el) {
+  var v = 0;
+  var o = util.timecounter.getObj(el);
+  if (o) {
+    v = o.update(o);
+    o.t0 = Date.now();
+  }
+  util.timecounter.start(el);
+  return v;
+};
+
 /**
  * Returns a string of time difference
  *
@@ -881,9 +914,8 @@ util.TimeCounter = function(el, t0, opt) {
   this.id = '_timecounter-' + util.timecounter.id++;
 };
 util.TimeCounter.prototype = {
-  start: function(interval) {
+  start: function() {
     var ctx = this;
-    if (interval != undefined) ctx.interval = interval;
     util.IntervalProc.stop(ctx.id);
     util.IntervalProc.start(ctx.id, ctx.update, ctx.interval, ctx);
   },
@@ -970,7 +1002,7 @@ util.Clock.prototype = {
     }
   }
 };
-util.Clock.DFLT_OPT = {interval: 500, fmt: '%YYYY-%MM-%DD %W %HH:%mm:%SS', offset: 0, tz: util.getTZ()};
+util.Clock.DFLT_OPT = {interval: 500, fmt: '%YYYY-%MM-%DD %W %HH:%mm:%SS', offset: 0, tz: util.getLocalTZ()};
 
 //---------------------------------------------------------
 // Time calculation
@@ -1314,7 +1346,7 @@ util.isInteger = function(v, strict) {
  */
 util.isFloat = function(s) {
   if (!s) return false;
-  return (s.trim().match(/^-?\d+\.\d+$/) ? true : false);
+  return ((s += '').trim().match(/^-?\d+\.\d+$/) ? true : false);
 };
 
 /**
@@ -1418,15 +1450,29 @@ util.toJSON = function(o, r, s) {
   return JSON.stringify(o, r, s);
 };
 
-util.copyProps = function(src, dst) {
-  for (var k in src) {
-    if (src[k] instanceof Object) {
-      dst[k] = {};
-      util.copyProps(src[k], dst[k]);
-    } else {
-      dst[k] = src[k];
+util.copyObject = function(src, dst) {
+  if (src instanceof Array) {
+    if (!dst) dst = [];
+    for (var i = 0; i < src.length; i++) {
+      var v = src[i];
+      if (v instanceof Object) {
+        dst.push(util.copyObject(v));
+      } else {
+        dst.push(v);
+      }
+    }
+  } else {
+    if (!dst) dst = {};
+    for (var k in src) {
+      if (src[k] instanceof Object) {
+        dst[k] = {};
+        util.copyObject(src[k], dst[k]);
+      } else {
+        dst[k] = src[k];
+      }
     }
   }
+  return dst;
 };
 
 util.copyDefaultProps = function(dflt, tgt) {
@@ -1655,7 +1701,7 @@ util.split = function(v, s, l) {
 };
 
 util.convertNewLine = function(s, nl) {
-  return s.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n/g, nl);
+  return s.replace(/\r\n|\r/g, '\n').replace(/\n/g, nl);
 };
 
 util.toHalfWidth = function(s) {
@@ -2070,9 +2116,9 @@ util.arr2set = function(arr, srt) {
     v.push({key: k, cnt: o[k]});
   }
   if (srt == 'asc|count') {
-    v = util.sortObj(v, 'cnt');
+    v = util.sortObject(v, 'cnt');
   } else if (srt == 'desc|count') {
-    v = util.sortObj(v, 'cnt', true);
+    v = util.sortObject(v, 'cnt', true);
   }
   var r = [];
   for (var i = 0; i < v.length; i++) {
@@ -2099,13 +2145,19 @@ util.removeListItem = function(list, item) {
  * [{id: 'A', cnt: 2}, {id: 'B', cnt: 1}, {id: 'C', cnt: 3}]
  * -> [{id: 'B', cnt: 1}, {id: 'A', cnt: 2}, {id: 'C', cnt: 3}]
  */
-util.sortObj = function(list, key, desc) {
-  if (desc) {
-    list.sort(function(a, b) {return b[key] - a[key];});
-  } else {
-    list.sort(function(a, b) {return a[key] - b[key];});
-  }
+util.sortObject = function(list, key, desc, asNum) {
+  list.sort(function(a, b) {return util._sort(a[key], b[key], desc, asNum);});
   return list;
+};
+util._sort = function(a, b, desc, asNum) {
+  if (a == undefined) a = '';
+  if (b == undefined) b = '';
+  if (asNum) {
+    if (!isNaN(a) && (a !== '')) a = parseFloat(a);
+    if (!isNaN(b) && (b !== '')) b = parseFloat(b);
+  }
+  if (a == b) return 0;
+  return (desc ? (a < b ? 1 : -1) : (a > b ? 1 : -1));
 };
 
 //---------------------------------------------------------
@@ -2656,7 +2708,7 @@ util.isTextInput = function(el) {
 util.addSelectOption = function(select, label, val, selected) {
   select = util.getElement(select);
   var opt = document.createElement('option');
-  opt.value = val;
+  opt.value = (val === undefined ? label : val);
   opt.innerText = label;
   if (selected) opt.selected = true;
   select.appendChild(opt);
@@ -2862,7 +2914,7 @@ util.linkUrls = function(s, attr) {
   var t = '<a href="$1"';
   if (attr) t += ' ' + attr;
   t += '>$1</a>';
-  return s.replace(/(https?:\/\/[!#$&'()*+,/:;=?@[\]0-9A-Za-z\-._~]+)/g, t);
+  return s.replace(/(https?:\/\/[!#$%&'*+,/:;=?@[\]0-9A-Za-z\-._~]+)/g, t);
 };
 
 //---------------------------------------------------------
@@ -5112,8 +5164,8 @@ util.modal = function(child, addCloseHandler) {
   this.sig = 'modal';
   var el = document.createElement('div');
   var style = {};
-  util.copyProps(util.modal.DFLT_STYLE, style);
-  if (util.modal.style) util.copyProps(util.modal.style, style);
+  util.copyObject(util.modal.DFLT_STYLE, style);
+  if (util.modal.style) util.copyObject(util.modal.style, style);
   util.setStyle(el, style);
   el.style.opacity = '0';
   if (addCloseHandler) el.addEventListener('click', this.onClick);
@@ -5617,6 +5669,8 @@ util.dialog.sysCbN = function(ctx) {
  *
  * opt = {
  *   data: object,
+ *   value: 'value',
+ *   placeholder: 'placeholder',
  *   secure: true|false,
  *   style: {
  *     message: {
@@ -5672,6 +5726,8 @@ util.dialog.text = function(a1, a2, a3, a4, a5) {
     }
   }
   txtBox.spellcheck = false;
+  txtBox.value = (opt.value ? opt.value : '');
+  txtBox.placeholder = (opt.placeholder ? opt.placeholder : '');
   var body = document.createElement('div');
   var wrp1 = document.createElement('div');
   wrp1.style.display = 'inline-block';
@@ -6310,7 +6366,7 @@ util.getClientLanguages = function(f) {
 //---------------------------------------------------------
 // Browser
 //---------------------------------------------------------
-util.getBrowserType = function(ua) {
+util.getBrowserInfo = function(ua) {
   if (ua == undefined) ua = navigator.userAgent;
   var ver;
   var brws = {name: '', version: ''};
@@ -6359,7 +6415,7 @@ util.getBrowserType = function(ua) {
 };
 util.getColoredBrowserName = function(n, dark) {
   if (!n) {
-    var b = util.getBrowserType();
+    var b = util.getBrowserInfo();
     n = b.name;
   }
   var s = n;
@@ -6399,7 +6455,7 @@ util.getColoredBrowserName = function(n, dark) {
       s = '<span style="color:#86c8e8">Safa</span><span style="color:#dd5651">r</span><span style="color:#ececec">i</span>';
       break;
     default:
-      b = util.getBrowserType(n);
+      b = util.getBrowserInfo(n);
       if (b.name) s = util.getColoredBrowserName(b.name);
   }
   return s;

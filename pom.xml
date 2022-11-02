@@ -115,7 +115,7 @@
     <dependency>
       <groupId>com.libutil</groupId>
       <artifactId>util</artifactId>
-      <version>1.7.0</version>
+      <version>1.7.2</version>
     </dependency>
   </dependencies>
 </project>
