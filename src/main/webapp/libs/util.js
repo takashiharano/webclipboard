@@ -5,7 +5,7 @@
  * https://libutil.com/
  */
 var util = util || {};
-util.v = '202210300048';
+util.v = '202302180026';
 
 util.SYSTEM_ZINDEX_BASE = 0x7ffffff0;
 util.DFLT_FADE_SPEED = 500;
@@ -1617,6 +1617,19 @@ util.repeatCh = function(c, n) {
   return s;
 };
 
+util.insertCh = function(s, ch, n) {
+  if (n == 0) return s;
+  var w = '';
+  var p = 0;
+  while (p < s.length) {
+    var a = s.substr(p, n);
+    w += a;
+    p += n;
+    if (p < s.length) w += ch;
+  }
+  return w;
+};
+
 /**
  * lpad(str, '0', 5)
  * 'ABC'   -> '00ABC'
@@ -3169,8 +3182,8 @@ util.updateTextAreaInfo = function(textarea) {
   var listener = textarea.listener;
   if (listener) {
     var data = {
-      cp10: u10,
-      cp16: u10,
+      codePoint: u10,
+      cp16: u16,
       ch: ch,
       len: len,
       lenB: lenB,
@@ -3643,8 +3656,17 @@ util.infotip.opt = null;
  * show("message", 0, {pos: 'active'});
  * show("message", 0, {style: {'font-size': '18px'}});
  */
-util.infotip.show = function(msg, duration, opt) {
-  var x, y, style, offset;
+util.infotip.show = function(msg, a2, a3) {
+  var x, y, style, offset, opt;
+  var duration = util.DFLT_DURATION;
+  if (typeof a2 == 'number') {
+    duration = a2;
+    opt = a3;
+  } else if (a2 instanceof Object) {
+    opt = a2;
+  } else if (a2 == undefined) {
+    opt = a3;
+  }
   if (opt) {
     if (opt.pos) {
       if (opt.pos == 'pointer') {
@@ -5083,10 +5105,10 @@ util.Window.onPointerUp = function() {
   if (ctx.uiStatus & util.Window.UI_ST_RESIZING) ctx.endResize(ctx);
 };
 
-util.Window.onResize = function() {
+util.Window.onResize = function(e) {
   for (var i = 0; i < util.Window.windows.length; i++) {
     var ctx = util.Window.windows[i];
-    ctx.onResize(ctx);
+    ctx.onResize(ctx, e);
   }
 };
 
@@ -5807,7 +5829,8 @@ util.confirm = function(a1, a2, a3, a4, a5) {
  *     value: 80,
  *     style: '1px solid #00f'
  *   }
- *  ]
+ *  ],
+ * sleed
  * }
  *
  * <div id="meter1"></div>
@@ -5831,7 +5854,7 @@ util.Meter = function(target, opt) {
   var green = 'linear-gradient(to right, #0d0, #8f8)';
   var yellow = 'linear-gradient(to right, #dd0 , #ff8)';
   var red = 'linear-gradient(to right, #d66 , #fcc)';
-
+  var speed = 250;
   if (opt) {
     if (opt.min != undefined) min = opt.min;
     if (opt.max != undefined) max = opt.max;
@@ -5853,6 +5876,7 @@ util.Meter = function(target, opt) {
       if (opt.yellow != undefined) yellow = opt.yellow;
       if (opt.red != undefined) red = opt.red;
     }
+    if (opt.speed != undefined) speed = opt.speed;
   }
 
   if (low == undefined) low = min;
@@ -5864,7 +5888,6 @@ util.Meter = function(target, opt) {
     if (optimum < min) optimum = min;
     if (optimum > max) optimum = max;
   }
-
   var base = target;
   base.className = 'meter';
   var style = {
@@ -5884,8 +5907,7 @@ util.Meter = function(target, opt) {
   style = {
     width: v + '%',
     height: '100%',
-    background: green,
-    transition: 'all 0.25s ease-out'
+    background: green
   };
   if (opt && opt.transition) style.transition = opt.transition;
   util.setStyle(bar, style);
@@ -5920,25 +5942,7 @@ util.Meter = function(target, opt) {
   var label = null;
   if (opt) label = opt.label;
   if (label) {
-    var lblEl = document.createElement('div');
-    s = {
-      position: 'absolute',
-      display: 'inline-block',
-      height: '1em',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      margin: 'auto 2px',
-      color: '#fff',
-      'font-size': '12px',
-      'font-family': 'Consolas, Monaco, Menlo, monospace, sans-serif',
-      'text-align': 'center',
-      'vertical-align': 'middle'
-    };
-    util.setStyle(lblEl, s);
-    if (label.style) util.setStyle(lblEl, label.style);
-    lblEl.innerHTML = label.text;
+    var lblEl = this.createLblEl(label);
     base.appendChild(lblEl);
   }
 
@@ -5957,23 +5961,62 @@ util.Meter = function(target, opt) {
     yellow: yellow,
     red: red,
     label: label,
-    scales: scales
+    scales: scales,
+    speed: speed
   };
   this.value = value;
   this.el = base;
   this.bar = bar;
   this.lblEl = lblEl;
+  this.setSpeed(speed);
   this.redraw();
 };
 
 util.Meter.prototype = {
+  initLblEl: function() {
+    this.lblEl = this.createLblEl();
+    this.el.appendChild(this.lblEl);
+  },
+  createLblEl: function(opt) {
+    if (!opt) opt = {};
+    var lblEl = document.createElement('div');
+    var s = {
+      position: 'absolute',
+      display: 'inline-block',
+      height: '1em',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      margin: 'auto 2px',
+      color: '#fff',
+      'font-size': '12px',
+      'font-family': 'Consolas, Monaco, Menlo, monospace, sans-serif',
+      'text-align': 'center',
+      'vertical-align': 'middle'
+    };
+    util.setStyle(lblEl, s);
+    if (opt.style) util.setStyle(lblEl, opt.style);
+    if (opt.text) lblEl.innerHTML = opt.text;
+    return lblEl;
+  },
   getValue: function() {
     return this.value;
   },
-  setValue: function(v, txt) {
+  setValue: function(v, a2, a3) {
     if (v != null) this._setValue(v);
+    var txt, speed;
+    if (a2 != undefined) {
+      if (typeof a2 == 'string') {
+        txt = a2;speed = a3;
+      } else {
+        speed = a2;
+      }
+    }
     if (txt != undefined) this.setText(txt);
+    if (speed != undefined) this.setSpeed(speed);
     this.redraw();
+    setTimeout(util._resetMeterSpeed, 5, this);
   },
   _setValue: function(v) {
     v |= 0;
@@ -5986,10 +6029,12 @@ util.Meter.prototype = {
     this.value = v;
   },
   setText: function(s) {
+    if (!this.lblEl) this.initLblEl();
     this.lblEl.innerHTML = s;
     this.redraw();
   },
   setTextStyle: function(s) {
+    if (!this.lblEl) this.initLblEl();
     util.setStyle(this.lblEl, s);
     this.redraw();
   },
@@ -6028,6 +6073,10 @@ util.Meter.prototype = {
   setOptimum: function(v) {
     this.optimum = v | 0;
     this.redraw();
+  },
+  setSpeed: function(v) {
+    var s = 'all ' + (v / 1000) + 's ease-out';
+    util.setStyle(this.bar, 'transition', s);
   },
   redraw: function() {
     var ctx = this;
@@ -6084,6 +6133,10 @@ util.Meter.buildHTML = function(val, opt) {
   var d = document.createElement('div');
   var m = new util.Meter(d, opt);
   return m.el.outerHTML;
+};
+
+util._resetMeterSpeed = function(c) {
+  c.setSpeed(c.opt.speed);
 };
 
 //---------------------------------------------------------
@@ -6593,13 +6646,7 @@ util.Base64.decode = function(str) {
 
 util.encodeBase64 = function(s) {
   if (s == undefined) return '';
-  var r;
-  try {
-    r = btoa(s);
-  } catch (e) {
-    r = btoa(encodeURIComponent(s).replace(/%([0-9A-F]{2})/g, function(match, p1) {return String.fromCharCode('0x' + p1);}));
-  }
-  return r;
+  return btoa(encodeURIComponent(s).replace(/%([0-9A-F]{2})/g, function(match, p1) {return String.fromCharCode('0x' + p1);}));
 };
 util.decodeBase64 = function(s) {
   if ((s == undefined) || !window.atob) return '';
@@ -6970,15 +7017,17 @@ util.Counter.prototype = {
   getValue: function() {
     return this.v;
   },
-  setValue: function(v) {
+  setValue: function(v, dur) {
     var ctx = this;
     v = util.floor(parseFloat(v), ctx.scale);
     ctx._stopTmr(ctx);
     ctx.v = v;
-    var dMax = ctx.dMax;
+    var dMax = (dur == undefined ? ctx.dMax : dur);
+    var dMin = (dur == undefined ? ctx.dMin : dur);
     var ngtvD = 0;
     if (dMax == 0) {
       ctx.print(ctx, v);
+      ctx.v0 = v;
       return;
     } else if (dMax < 0) {
       ngtvD = 1;
@@ -7005,12 +7054,12 @@ util.Counter.prototype = {
       } else {
         ctx.step = 1;
       }
-      if (a < ctx.dMin) ctx.r = util.ceil(ctx.dMin / a, ctx.scale);
+      if ((a < dMin) && (a != 0)) ctx.r = util.ceil(dMin / a, ctx.scale);
     }
     if (Math.floor(ctx.step) % 10 == 0) ctx.step += 1;
     if (d < 0) ctx.step *= (-1);
     if (ngtvD) {
-      var t = (a < ctx.dMin ? ctx.dMin : dMax);
+      var t = (a < dMin ? dMin : dMax);
       ctx.v0 = v;
       ctx.tmrId = setTimeout(ctx.update, t, ctx);
     } else {
@@ -7663,33 +7712,39 @@ util._log.e = function(o) {
 };
 
 //---------------------------------------------------------
-util.onReady = function() {
-  util.setupStyle();
-};
-
-util.onResize = function() {
+util.onResize = function(e) {
   util.infotip.adjust();
   util.dialog.adjust();
-  util.Window.onResize();
+  util.Window.onResize(e);
 };
 
-util.$onReady = function() {
+util.$onReady = function(e) {
+  util.setupStyle();
   var fn = window.$onReady;
-  if (fn) fn();
+  if (fn) fn(e);
 };
-util.$onLoad = function() {
+util.$onLoad = function(e) {
   var fn = window.$onLoad;
-  if (fn) fn();
+  if (fn) fn(e);
 };
-util.$onBeforeUnload = function() {
+util.$onBeforeUnload = function(e) {
   var fn = window.$onBeforeUnload;
-  if (fn) fn();
+  if (fn) fn(e);
 };
-util.$onUnload = function() {
+util.$onUnload = function(e) {
   var fn = window.$onUnload;
-  if (fn) fn();
+  if (fn) fn(e);
 };
 util.$onKeyDown = function(e) {
+  var p = 0;
+  if (e.keyCode == 13) {
+    if (window.$onEnterKey) window.$onEnterKey(e);
+  } else if (e.keyCode == 27) {
+    if (window.$onEscKey) window.$onEscKey(e);
+  } else if ((e.keyCode == 83) && e.ctrlKey) {
+    if (window.$onCtrlS) {p = 1;window.$onCtrlS(e);}
+  }
+  if (p) e.preventDefault();
   var fn = window.$onKeyDown;
   if (fn) fn(e);
 };
@@ -7758,7 +7813,6 @@ util.init = function() {
   try {
     if (typeof window.localStorage != 'undefined') util.LS_AVAILABLE = true;
   } catch (e) {}
-  window.addEventListener('DOMContentLoaded', util.onReady, true);
   window.addEventListener('mousemove', util.onMouseMove, true);
   window.addEventListener('mouseup', util.onMouseUp, true);
   window.addEventListener('keydown', util.onKeyDown, true);
