@@ -5,7 +5,7 @@
  * https://libutil.com/
  */
 var util = util || {};
-util.v = '202302180026';
+util.v = '202308261343';
 
 util.SYSTEM_ZINDEX_BASE = 0x7ffffff0;
 util.DFLT_FADE_SPEED = 500;
@@ -337,10 +337,12 @@ util.getTimestampOfDay = function(timeString, offset) {
  * offset: TZ offset. '-1200' to '+1400' (abs) / -12 to 14 (rel)
  * 1628679929040 -> 1628640000000 (offset='+0000')
  */
-util.getTimestampOfMidnight = function(dt, offset) {
+util.getMidnightTimestamp = function(dt, offset) {
   var ms = dt;
   var os = 0;
-  if (typeof dt == 'string') {
+  if (dt == undefined) {
+    dt = util.getDateTime();
+  } else if (typeof dt == 'string') {
     dt = util.getDateTime(dt);
     ms = dt.timestamp;
     if ((offset == undefined) && dt.tz) os = util.getOffsetFromLocalTz(dt.tz);
@@ -528,8 +530,8 @@ util.difftime = function(t0, t1) {
  */
 util.diffDays = function(ms1, ms2, offset, abs) {
   var sign = 1;
-  ms1 = util.getTimestampOfMidnight(ms1, offset);
-  ms2 = util.getTimestampOfMidnight(ms2, offset);
+  ms1 = util.getMidnightTimestamp(ms1, offset);
+  ms2 = util.getMidnightTimestamp(ms2, offset);
   var d = ms2 - ms1;
   if (d < 0) {
     d *= -1;
@@ -829,14 +831,17 @@ util.timecounter.start = function(el, t0, opt) {
 /**
  * Stop displaying the time difference
  */
-util.timecounter.stop = function(el) {
+util.timecounter.stop = function(el, t0, opt) {
   var v = 0;
   var o = util.timecounter.getObj(el);
-  if (o) {
-    v = o.update(o);
-    o.stop();
-    delete util.timecounter.objs[o.id];
+  if (!o) {
+    o = new util.TimeCounter(el, t0, opt);
+    util.timecounter.objs[o.id] = o;
   }
+  if (t0 != undefined) o.t0 = t0;
+  v = o.update(o);
+  o.stop();
+  delete util.timecounter.objs[o.id];
   return v;
 };
 
@@ -903,8 +908,7 @@ util.timecounter.ids = function() {
  * TimeCounter Class
  */
 util.TimeCounter = function(el, t0, opt) {
-  if (!opt) opt = {};
-  util.copyDefaultProps(util.TimeCounter.DFLT_OPT, opt);
+  opt = util.copyDefaultProps(util.TimeCounter.DFLT_OPT, opt);
   this.el = el;
   this.t0 = (t0 == undefined ? Date.now() : t0);
   this.interval = opt.interval;
@@ -970,8 +974,7 @@ util.Clock = function(el, opt) {
   } else if (typeof a1 == 'number') {
     opt = {offset: opt};
   }
-  if (!opt) opt = {};
-  util.copyDefaultProps(util.Clock.DFLT_OPT, opt);
+  opt = util.copyDefaultProps(util.Clock.DFLT_OPT, opt);
   this.el = el;
   this.opt = opt;
   this.interval = opt.interval;
@@ -1335,7 +1338,7 @@ util.isInteger = function(v, strict) {
   v = ('' + v).trim();
   if (!v) return false;
   var a = v.split('.');
-  if (!a[0].match(/^-?\d+$/)) return false;
+  if (!a[0].match(/^[+-]?\d+$/)) return false;
   if (!a[1]) return true;
   return (a[1].match(/^0+$/) ? true : false);
 };
@@ -1346,7 +1349,7 @@ util.isInteger = function(v, strict) {
  */
 util.isFloat = function(s) {
   if (!s) return false;
-  return ((s += '').trim().match(/^-?\d+\.\d+$/) ? true : false);
+  return ((s += '').trim().match(/^[+-]?\d+\.\d+$/) ? true : false);
 };
 
 /**
@@ -1661,6 +1664,18 @@ util.rpad = function(str, pad, len, adj) {
   r += pd;
   if (adj) r = r.substr(0, len);
   return r;
+};
+
+/**
+ * ABCDEFGHIJKLMNOPQRSTUVWXYZ
+ * -> ABCDEFG..TUVWXYZ
+ */
+util.snip = function(s, n1, n2, c) {
+  if (n1 == undefined) n1 = 7;
+  if (n2 == undefined) n2 = 7;
+  if (c == undefined) c = '..';
+  if (s.length >= (n1 + n2 + c.length)) s = s.substr(0, n1) + c + s.substr(s.length - n2, n2);
+  return s;
 };
 
 /**
@@ -2165,6 +2180,10 @@ util.sortObject = function(list, key, desc, asNum) {
 util._sort = function(a, b, desc, asNum) {
   if (a == undefined) a = '';
   if (b == undefined) b = '';
+  if (a === true) a = 1;
+  if (b === true) b = 1;
+  if (a === false) a = 0;
+  if (b === false) b = 0;
   if (asNum) {
     if (!isNaN(a) && (a !== '')) a = parseFloat(a);
     if (!isNaN(b) && (b !== '')) b = parseFloat(b);
@@ -2421,17 +2440,20 @@ util.http.listeners = {
 //---------------------------------------------------------
 // Element
 //---------------------------------------------------------
-var $el = function(target, idx) {
-  var el = util.getElement(target, idx);
+var $el = function(tgt, idx) {
+  var el = util.getElement(tgt, idx);
   if (el) {
     for (var k in $el.fn) {
       if (el[k] == undefined) el[k] = $el.fn[k];
     }
+    el.notFound = false;
   } else {
-    el = {notExists: true, style: {}};
+    el = {style: {}};
     for (k in $el.fn) {
       el[k] = util.nop;
     }
+    el.exists = function() {return false;};
+    el.notFound = true;
   }
   return el;
 };
@@ -2528,19 +2550,34 @@ $el.fn = {
   scrollY: function(y) {
     return util.callFn4El(util.scrollY, this, y);
   },
+  scrollToTop: function() {
+    return util.callFn4El(util.scrollToTop, this);
+  },
+  scrollToRight: function() {
+    return util.callFn4El(util.scrollToRight, this);
+  },
+  scrollToBottom: function() {
+    return util.callFn4El(util.scrollToBottom, this);
+  },
+  scrollToLeft: function() {
+    return util.callFn4El(util.scrollToLeft, this);
+  },
   prev: function() {
     return util.prevElement(this);
   },
   next: function() {
     return util.nextElement(this);
+  },
+  exists: function() {
+    return true;
   }
 };
 
-util.getElement = function(target, idx) {
-  var el = target;
-  if (typeof target == 'string') {
-    el = document.querySelectorAll(target);
-    if (target.charAt(0) == '#') idx = 0;
+util.getElement = function(tgt, idx) {
+  var el = tgt;
+  if (typeof tgt == 'string') {
+    el = document.querySelectorAll(tgt);
+    if (tgt.charAt(0) == '#') idx = 0;
     if (idx != undefined) el = el.item(idx);
   }
   return el;
@@ -2776,6 +2813,18 @@ util.scrollY = function(el, y) {
   el.scrollTop = y;
   return el.scrollTop;
 };
+util.scrollToTop = function(el) {
+  el.scrollTop = 0;
+};
+util.scrollToRight = function(el) {
+  el.scrollLeft = el.scrollWidth;
+};
+util.scrollToBottom = function(el) {
+  el.scrollTop = el.scrollHeight;
+};
+util.scrollToLeft = function(el) {
+  el.scrollLeft = 0;
+};
 
 util.escHtml = function(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -2815,8 +2864,7 @@ util.overlay.show = function(tgt, el, opt) {
   tgt = util.getElement(tgt);
   el = util.getElement(el);
   if (!tgt || !el || tgt.contains(el)) return;
-  if (!opt) opt = {};
-  util.copyDefaultProps(util.overlay.DFLT_SHOW_OPT, opt);
+  opt = util.copyDefaultProps(util.overlay.DFLT_SHOW_OPT, opt);
   el.style.opacity = 0;
   el.style.position = 'absolute';
   if (opt.fade > 0) util.addClass(el, 'fadeout');
@@ -2873,8 +2921,7 @@ util.overlay.hide = function(tgt, el, opt) {
   tgt = util.getElement(tgt);
   el = util.getElement(el);
   if (!tgt || !el || !tgt.contains(el)) return;
-  if (!opt) opt = {};
-  util.copyDefaultProps(util.overlay.DFLT_HIDE_OPT, opt);
+  opt = util.copyDefaultProps(util.overlay.DFLT_HIDE_OPT, opt);
   var o = {el: el, tgt: tgt};
   if (opt.fade > 0) {
     util.fadeOut(el, opt.fade, util.overlay._hide, o);
@@ -3194,18 +3241,18 @@ util.updateTextAreaInfo = function(textarea) {
     listener(data);
   }
 };
-util.textarea._adqdLIstener = function(target) {
-  target.addEventListener('input', util.textarea.onInput);
-  target.addEventListener('change', util.textarea.onInput);
-  target.addEventListener('keydown', util.textarea.onInput);
-  target.addEventListener('keyup', util.textarea.onInput);
-  target.addEventListener('click', util.textarea.onInput);
+util.textarea._adqdLIstener = function(tgt) {
+  tgt.addEventListener('input', util.textarea.onInput);
+  tgt.addEventListener('change', util.textarea.onInput);
+  tgt.addEventListener('keydown', util.textarea.onInput);
+  tgt.addEventListener('keyup', util.textarea.onInput);
+  tgt.addEventListener('click', util.textarea.onInput);
 };
 util.textarea.onInput = function(e) {
   util.updateTextAreaInfo(e.target);
 };
-util.textarea.addListener = function(target, f) {
-  var el = util.getElement(target);
+util.textarea.addListener = function(tgt, f) {
+  var el = util.getElement(tgt);
   if (el) {
     el.listener = f;
     util.textarea._adqdLIstener(el);
@@ -3224,9 +3271,9 @@ util.textarea.addListener = function(target, f) {
  * util.writeHTML('#id', '');
  * util.writeHTML('#id', '', 200);
  */
-util.writeHTML = function(target, html, speed) {
-  var el = target;
-  if (typeof target == 'string') el = document.querySelector(target);
+util.writeHTML = function(tgt, html, speed) {
+  var el = tgt;
+  if (typeof tgt == 'string') el = document.querySelector(tgt);
   if (!el) return;
   if (speed == 0) {
     el.innerHTML = html;
@@ -3254,10 +3301,10 @@ util.__writeHTML = function(cbData) {
 /**
  * Fade out and clear
  */
-util.clearHTML = function(target, speed) {
+util.clearHTML = function(tgt, speed) {
   var DFLT_SPEED = 200;
   if ((speed == undefined) || (speed < 0)) speed = DFLT_SPEED;
-  util.fadeOut(target, speed, util._clearHTML, target);
+  util.fadeOut(tgt, speed, util._clearHTML, tgt);
 };
 util._clearHTML = function(el) {
   el.innerHTML = '';
@@ -3570,6 +3617,25 @@ util.STYLE = function() {/*
 .dialog {
   background: #fff;
   color: #000;
+}
+.led {
+  text-shadow: 0 0 5px !important;
+}
+.led:before {content:"\025CF"}
+.led-on {
+  color: #0f0 !important;
+}
+.led-off {
+  color: #888 !important;
+}
+.led-red {
+  color: #f88 !important;
+}
+.led-orange {
+  color: #f80 !important;
+}
+.led-blue {
+  color: #4cf !important;
 }
 */};
 
@@ -4069,8 +4135,7 @@ util.loader.show = function(el, opt) {
     opt = el;
     el = null;
   }
-  if (!opt) opt = {};
-  util.copyDefaultProps(util.loader.DFLTOPT, opt);
+  opt = util.copyDefaultProps(util.loader.DFLTOPT, opt);
   el = util.getElement(el);
   if (!el) el = document.body;
   var ctx = util.getCtx4El(util.loader.ctxs, el);
@@ -4139,6 +4204,127 @@ util.loader._hide = function(ctx) {
   util.overlay.hide(ctx.el, ctx.ldrEl);
   var i = util.getCtxIdx4El(util.loader.ctxs, ctx.el);
   util.loader.ctxs.splice(i, 1);
+};
+
+//---------------------------------------------------------
+// Loading Screen
+// util.loadingScreen.show('Loading...');
+// util.loadingScreen.show('Loading...', '<img src="img.png">');
+// util.loadingScreen.hide();
+//---------------------------------------------------------
+util.loadingScreen = {};
+util.loadingScreen.modal = null;
+util.loadingScreen.baseEl = null;
+util.loadingScreen.msg = null;
+util.loadingScreen.show = function(m, html) {
+  if (util.loadingScreen.modal) {
+    var msg = util.loadingScreen.msg;
+    if (m) {
+      if (!msg) {
+        msg = util.loadingScreen.appendMsgArea(util.loadingScreen.baseEl);
+        util.loadingScreen.msg = msg;
+      }
+      msg.innerHTML = m;
+      util.setStyle(msg, 'opacity', '1');
+    } else {
+      if (msg) {
+        msg.innerText = '';
+        util.setStyle(msg, 'opacity', '0');
+      }
+    }
+    return false;
+  }
+  util.loadingScreen.create(msg, m, html);
+  return true;
+};
+util.loadingScreen.create = function(msg, m, html) {
+  var outerWrp = document.createElement('div');
+  var styles = {
+    'display': 'table',
+    'position': 'absolute',
+    'width': '100%',
+    'height': '100%',
+    'top': '0',
+    'right': '0',
+    'bottom': '0',
+    'left': '0',
+    'margin': 'auto'
+  };
+  util.setStyle(outerWrp, styles);
+  var wrp = document.createElement('div');
+  styles = {
+    'display': 'table-cell',
+    'position': 'relative',
+    'width': '100%',
+    'height': '100%',
+    'text-align': 'center',
+    'vertical-align': 'middle'
+  };
+  util.setStyle(wrp, styles);
+  util.loadingScreen.baseEl = wrp;
+  outerWrp.appendChild(wrp);
+  if (html) {
+    util.loadingScreen.appendHtml(wrp, html);
+  } else {
+    util.loadingScreen.appendLoader(wrp);
+  }
+  if (m && !util.loadingScreen.msg) {
+    msg = util.loadingScreen.appendMsgArea(wrp);
+    msg.innerHTML = m;
+    util.loadingScreen.msg = msg;
+  }
+  styles = {background: 'rgba(0,0,0,0.3)'};
+  var closeAnywhere = false;
+  var modal = util.modal.show(outerWrp, closeAnywhere, styles);
+  util.loadingScreen.modal = modal;
+  util.setStyle(document.body, 'cursor', 'progress');
+};
+util.loadingScreen.hide = function() {
+  if (util.loadingScreen.modal) {
+    util.loadingScreen.destroy();
+    return true;
+  }
+  return false;
+};
+util.loadingScreen.destroy = function() {
+  util.loadingScreen.modal.hide();
+  util.loadingScreen.msg = null;
+  util.loadingScreen.baseEl = null;
+  util.loadingScreen.modal = null;
+  util.setStyle(document.body, 'cursor', '');
+};
+util.loadingScreen.appendLoader = function(baseEl) {
+  var opt = util.copyDefaultProps(util.loader.DFLTOPT);
+  var el = util.loader.create(opt);
+  util.setStyle(el, 'top', '-112px');
+  baseEl.appendChild(el);
+};
+util.loadingScreen.appendHtml = function(baseEl, html) {
+  var el = document.createElement('div');
+  el.innerHTML = html;
+  baseEl.appendChild(el);
+};
+util.loadingScreen.appendMsgArea = function(baseEl) {
+  var msg = util.loadingScreen.createMsgArea();
+  baseEl.appendChild(msg);
+  return msg;
+};
+util.loadingScreen.createMsgArea = function() {
+  var el = document.createElement('pre');
+  var styles = {
+    'display': 'inline-block',
+    'position': 'relative',
+    'width': 'auto',
+    'height': 'auto',
+    'top': '0',
+    'border-radius': '4px',
+    'background': 'rgba(0,0,0,0.5)',
+    'padding': '0.5em 1em',
+    'color': '#fff',
+    'font-size': '14px'
+  };
+  util.setStyle(el, styles);
+  return el;
 };
 
 //---------------------------------------------------------
@@ -5185,8 +5371,7 @@ util.MODAL_ZINDEX = util.SYSTEM_ZINDEX_BASE;
 util.modal = function(child, addCloseHandler) {
   this.sig = 'modal';
   var el = document.createElement('div');
-  var style = {};
-  util.copyObject(util.modal.DFLT_STYLE, style);
+  var style = util.copyObject(util.modal.DFLT_STYLE);
   if (util.modal.style) util.copyObject(util.modal.style, style);
   util.setStyle(el, style);
   el.style.opacity = '0';
@@ -5306,6 +5491,7 @@ util.dialog = function(content, opt) {
   var o = ctx.createDialogBody(ctx, content, opt);
   ctx.el = ctx.create(ctx, o.boby, opt);
   ctx.btnEls = o.btnEls;
+  ctx.open = true;
 
   var closeAnywhere = false;
   if (opt) {
@@ -5416,9 +5602,17 @@ util.dialog.prototype = {
     return {boby: body, btnEls: btnEls};
   },
 
+  pressButton: function(n) {
+    if (this.open) {
+      var b = this.btnEls[n];
+      if (b) util.dialog.btnCb({target: b});
+    }
+  },
+
   close: function(ctx) {
     ctx.modal.removeChild(ctx.el);
     util.modal.hide(ctx.modal);
+    ctx.open = false;
   },
 
   center: function(ctx) {
@@ -5434,18 +5628,12 @@ util.dialog.focusBtn = function() {
     util.dialog.initFocusEl = null;
   }
 };
-util.dialog.getTopDialog = function() {
-  var dialog = null;
-  var instances = util.dialog.instances;
-  if (instances.length > 0) dialog = instances[instances.length - 1];
-  return dialog;
-};
 util.dialog.adjust = function() {
-  var d = util.dialog.getTopDialog();
+  var d = util.dialog.get();
   if (d) d.center(d);
 };
 util.dialog.show = function() {
-  var d = util.dialog.getTopDialog();
+  var d = util.dialog.get();
   d.el.style.opacity = 1;
   util.dialog.adjust();
 };
@@ -5482,36 +5670,53 @@ util.dialog.open = function(content, opt) {
 };
 
 util.dialog.btnCb = function(e) {
-  util.dialog.instances.pop();
   var el = e.target;
+  util.dialog.instances.pop();
   util.dialog.btnHandler(el);
 };
 
 util.dialog.btnHandler = function(el) {
   var ctx = el.ctx;
-  ctx.close(ctx);
   var data;
   if (ctx.opt) data = ctx.opt.data;
   if (el.cb) el.cb(data);
+  ctx.close(ctx);
 };
 
 util.dialog.close = function(btnIdx) {
-  var dialog = util.dialog.instances.pop();
-  if (!dialog) return;
+  var d = util.dialog.instances.pop();
+  if (!d) return;
   if (btnIdx == undefined) {
-    dialog.close(dialog);
+    d.close(d);
   } else {
-    var b = dialog.btnEls[btnIdx];
+    var b = d.btnEls[btnIdx];
     if (b) {
-      util.dialog.btnHandler(b);
+      util.d.btnHandler(b);
     } else {
-      dialog.close(dialog);
+      d.close(d);
     }
   }
+};
+util.dialog.closeAll = function() {
+  var n = util.dialog.count();
+  for (var i = 0; i < n; i++) {
+    util.dialog.close();
+  }
+};
+
+util.dialog.get = function(idx) {
+  if (idx == undefined) idx = util.dialog.instances.length - 1;
+  if (idx >= util.dialog.instances.length) return null;
+  return util.dialog.instances[idx];
 };
 
 util.dialog.count = function() {
   return util.dialog.instances.length;
+};
+
+util.dialog.pressButton = function(n) {
+  var d = util.dialog.get();
+  if (d) d.pressButton(n);
 };
 
 //-----------------------------------------------
@@ -5575,7 +5780,7 @@ util.dialog.info = function(a1, a2, a3, a4) {
     }
   }
   content.innerHTML = msg;
-  util.dialog.open(content, dialogOpt);
+  return util.dialog.open(content, dialogOpt);
 };
 
 //-----------------------------------------------------------
@@ -5669,7 +5874,12 @@ util.dialog.confirmDialog = function(title, content, definition, opt) {
     focusEl: definition.focusEl, // prior
     style: opt.style
   };
-  util.dialog.open(content, dialogOpt);
+  ctx.dlg = util.dialog.open(content, dialogOpt);
+};
+util.dialog.confirmDialog.prototype = {
+  pressButton: function(n) {
+    this.dlg.pressButton(n);
+  }
 };
 util.dialog.sysCbY = function(ctx) {
   if (ctx.cbY) ctx.cbY(ctx.data);
@@ -5791,17 +6001,17 @@ util.dialog.text.sysCbCancel = function(ctx) {
 };
 
 util.alert = function(a1, a2, a3, a4) {
-  util.dialog.info(a1, a2, a3, a4);
+  return util.dialog.info(a1, a2, a3, a4);
 };
 util.confirm = function(a1, a2, a3, a4, a5) {
-  util.dialog.confirm(a1, a2, a3, a4, a5);
+  return util.dialog.confirm(a1, a2, a3, a4, a5);
 };
 
 //---------------------------------------------------------
 // Meter
 //---------------------------------------------------------
 /**
- * target: element / selector
+ * tgt: element / selector
  * opt = {
  *  min
  *  max
@@ -5836,12 +6046,12 @@ util.confirm = function(a1, a2, a3, a4, a5) {
  * <div id="meter1"></div>
  * var m = new util.Meter('#meter1', opt);
  */
-util.initMeter = function(target, opt) {
-  return new util.Meter(target, opt);
+util.initMeter = function(tgt, opt) {
+  return new util.Meter(tgt, opt);
 };
-util.Meter = function(target, opt) {
-  target = util.getElement(target);
-  target.innerHTML = '';
+util.Meter = function(tgt, opt) {
+  tgt = util.getElement(tgt);
+  tgt.innerHTML = '';
 
   var min = 0;
   var max = 100;
@@ -5888,7 +6098,7 @@ util.Meter = function(target, opt) {
     if (optimum < min) optimum = min;
     if (optimum > max) optimum = max;
   }
-  var base = target;
+  var base = tgt;
   base.className = 'meter';
   var style = {
     display: 'inline-block',
@@ -6159,10 +6369,9 @@ util._resetMeterSpeed = function(c) {
  *   active: true
  * };
  */
-util.Led = function(target, opt) {
-  var baseEl = util.getElement(target);
-  if (!opt) opt = {};
-  util.copyDefaultProps(util.Led.DFLTOPT, opt);
+util.Led = function(tgt, opt) {
+  var baseEl = util.getElement(tgt);
+  opt = util.copyDefaultProps(util.Led.DFLTOPT, opt);
   var active = opt.active ? true : false;
 
   var ledEl = document.createElement('span');
@@ -6175,7 +6384,7 @@ util.Led = function(target, opt) {
   };
   if (opt.shadow) style['text-shadow'] = opt.shadow;
   util.setStyle(ledEl, style);
-  ledEl.innerHTML = '&#x25CF;';
+  baseEl.innerHTML = '';
   baseEl.appendChild(ledEl);
 
   this.opt = opt;
@@ -6197,28 +6406,28 @@ util.Led.DFLTOPT = {
 util.Led.DFLT_BLINK_DURATION = 700;
 util.Led.prototype = {
   on: function(a1, a2) {
-    var color = a1;
-    var speed = a2;
+    var c = a1;
+    var s = a2;
     if (typeof a1 == 'number') {
-      color = '';speed = a1;
+      c = '';s = a1;
     }
     var ctx = this;
     ctx._stopBlink();
-    if (color) ctx.opt.color = color;
+    if (c) ctx.opt.color = c;
     ctx.active = true;
-    ctx._on(ctx, speed);
+    ctx._on(ctx, s);
   },
   off: function(a1, a2) {
-    var color = a1;
-    var speed = a2;
+    var c = a1;
+    var s = a2;
     if (typeof a1 == 'number') {
-      color = '';speed = a1;
+      c = '';s = a1;
     }
     var ctx = this;
     ctx._stopBlink();
-    if (color) ctx.opt.offColor = color;
+    if (c) ctx.opt.offColor = c;
     ctx.active = false;
-    ctx._off(ctx, speed);
+    ctx._off(ctx, s);
   },
   toggle: function(speed) {
     var ctx = this;
@@ -6228,28 +6437,34 @@ util.Led.prototype = {
       ctx.on(speed);
     }
   },
-  _on: function(ctx, speed) {
+  _on: function(ctx, s) {
     ctx.lighted = true;
-    if (speed == undefined) speed = ctx.opt.speed;
-    speed = (speed ? (speed / 1000) : 0);
+    if (s == undefined) s = ctx.opt.speed;
+    s = (s ? (s / 1000) : 0);
     var style = {
       color: ctx.opt.color,
-      transition: 'all ' + speed + 's ease-out'
+      transition: 'all ' + s + 's ease-out'
     };
     util.setStyle(ctx.ledEl, style);
   },
-  _off: function(ctx, speed) {
+  _off: function(ctx, s) {
     ctx.lighted = false;
-    if (speed == undefined) speed = ctx.opt.speed;
-    speed = (speed ? (speed / 1000) : 0);
+    if (s == undefined) s = ctx.opt.speed;
+    s = (s ? (s / 1000) : 0);
     var style = {
       color: ctx.opt.offColor,
-      transition: 'all ' + speed + 's ease-in'
+      transition: 'all ' + s + 's ease-in'
     };
     util.setStyle(ctx.ledEl, style);
   },
-  blink: function(d) {
+  blink: function(a1, a2) {
     var ctx = this;
+    var d = a1;
+    var c;
+    if (typeof a1 == 'string') {
+      c = a1;d = a2;
+    }
+    if (c) ctx.opt.color = c;
     ctx._stopBlink();
     if (d === false) return;
     d |= 0;
@@ -6267,7 +6482,11 @@ util.Led.prototype = {
   },
   blink2: function(a) {
     var ctx = this;
-    if (a == undefined) a = true;
+    if (a == undefined) {
+      a = true;
+    } else if (typeof a == 'string') {
+      ctx.opt.color = a;
+    }
     ctx._stopBlink();
     if (a) {
       ctx._on(ctx);
@@ -6662,6 +6881,35 @@ util.decodeBase64 = function(s) {
 };
 
 //---------------------------------------------------------
+// Base64S
+//---------------------------------------------------------
+util.encodeBase64S = function(s, k) {
+  var a = util.UTF8.toByteArray(s);
+  var b = util.xor(a, k);
+  return util.Base64.encode(b);
+};
+util.decodeBase64S = function(s, k) {
+  if (s == undefined) return '';
+  s = util.convertNewLine(s, '\n').replace(/\n/g, '');
+  if (s.match(/\$\d+$/)) {
+    var w = s.split('$');
+    s = w[0];
+    k = w[1] | 0;
+  }
+  var b = util.Base64.decode(s);
+  var a = util.xor(b, k);
+  return util.UTF8.fromByteArray(a);
+};
+util.xor = function(a, n) {
+  n = n % 256;
+  var b = [];
+  for (var i = 0; i < a.length; i++) {
+    b.push(a[i] ^ n);
+  }
+  return b;
+};
+
+//---------------------------------------------------------
 // UTF-8
 //---------------------------------------------------------
 util.UTF8 = {};
@@ -6977,8 +7225,7 @@ util.initCounter = function(el, opt) {
 util.Counter = function(el, opt) {
   var ctx = this;
   el = util.getElement(el);
-  if (!opt) opt = {};
-  util.copyDefaultProps(util.Counter.DFLTOPT, opt);
+  opt = util.copyDefaultProps(util.Counter.DFLTOPT, opt);
   if (typeof opt.duration == 'number') {
     opt.duration = {min: opt.duration, max: opt.duration};
   }
@@ -7451,13 +7698,14 @@ util.onTouchEnd = function() {
 util.keyHandlers = {down: [], press: [], up: []};
 
 /**
- * keyCode: code
+ * keyCode: code / 'A'
  * type: down / press / up
  * fn: function(e) {};
  * combination: {ctrl: true, shift: false, alt: false, meta: false};
- * addKeyHandler(83, 'down', fn, combination);
+ * addKeyHandler(65, 'down', fn, combination);
  */
 util.addKeyHandler = function(keyCode, type, fn, combination) {
+  if (typeof keyCode == 'string') keyCode = keyCode.toUpperCase().charCodeAt(0);
   if ((type != 'down') && (type != 'press') && (type != 'up')) return;
   var handler = {keyCode: keyCode, combination: combination, fn: fn};
   util.keyHandlers[type].push(handler);
@@ -7509,7 +7757,6 @@ util.addEscKeyHandler = function(fn) {
 
 // k: keyCode or 'A-Za-z0-9'
 util.addCtrlKeyHandler = function(k, fn) {
-  if (typeof k == 'string') k = k.toUpperCase().charCodeAt(0);
   util.addKeyHandler(k, 'down', fn, {ctrl: true, shift: false, alt: false, meta: false});
 };
 
