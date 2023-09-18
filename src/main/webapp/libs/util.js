@@ -5,7 +5,7 @@
  * https://libutil.com/
  */
 var util = util || {};
-util.v = '202308261343';
+util.v = '202309181808';
 
 util.SYSTEM_ZINDEX_BASE = 0x7ffffff0;
 util.DFLT_FADE_SPEED = 500;
@@ -1891,22 +1891,25 @@ util.trimTrailingZeros = function(s) {
  * 1 -> '1'
  * 1024 -> '1K'
  * 1048576 -> '1M'
+ * scale: 1=1.2K / 2=1.25K
  * sep=true: '1,023K'
  * sp=true: '1 K'
  */
-util.convByte = function(v, sep, sp) {
+util.convByte = function(v, scale, sep, sp) {
   var U = ['', 'K', 'M', 'G', 'T', 'P'];
   var b = v;
   var u = '';
   for (var i = 5; i >= 1; i--) {
     var c = Math.pow(1024, i);
-    if (v >= c) {
-      b = v / c;
+    var w = v / c;
+    if ((v >= c) || (w > 0.9756)) {
+      b = w;
       u = U[i];
       break;
     }
   }
-  var r = util.floor(b, 1);
+  if (scale == undefined) scale = 1;
+  var r = util.floor(b, scale);
   if (sep) r = util.formatNumber(r);
   if (sp && u) r += ' ';
   return r + u;
@@ -5588,7 +5591,7 @@ util.dialog.prototype = {
             util.setStyle(btnEl, key, opt.style.button[key]);
           }
         }
-        btnEl.className = 'dialog-button';
+        btnEl.className = 'dialog-button dialog-button-' + i;
         btnEl.addEventListener('click', util.dialog.btnCb);
         btnEl.innerText = button.label;
         btnEl.cb = button.cb;
@@ -6881,32 +6884,49 @@ util.decodeBase64 = function(s) {
 };
 
 //---------------------------------------------------------
-// Base64S
+// Base64s
 //---------------------------------------------------------
-util.encodeBase64S = function(s, k) {
-  var a = util.UTF8.toByteArray(s);
-  var b = util.xor(a, k);
+util.encodeBase64s = function(s, k) {
+  var a = ((typeof s == 'string') ? util.UTF8.toByteArray(s) : s);
+  var x = util.UTF8.toByteArray(k);
+  var b = util._encodeBase64s(a, x);
   return util.Base64.encode(b);
 };
-util.decodeBase64S = function(s, k) {
-  if (s == undefined) return '';
-  s = util.convertNewLine(s, '\n').replace(/\n/g, '');
-  if (s.match(/\$\d+$/)) {
-    var w = s.split('$');
-    s = w[0];
-    k = w[1] | 0;
-  }
-  var b = util.Base64.decode(s);
-  var a = util.xor(b, k);
-  return util.UTF8.fromByteArray(a);
-};
-util.xor = function(a, n) {
-  n = n % 256;
+util._encodeBase64s = function(a, k) {
+  var al = a.length;
+  var kl = k.length;
+  if ((al == 0) || (kl == 0)) return a;
+  var p = kl - al;
+  if (p < 0) p = 0;
   var b = [];
-  for (var i = 0; i < a.length; i++) {
-    b.push(a[i] ^ n);
+  b.push(p);
+  for (var i = 0; i < al; i++) {
+    b.push(a[i] ^ k[i % kl]);
+  }
+  var n = i;
+  for (i = 0; i < p; i++) {
+    b.push(255 ^ k[(n + i) % kl]);
   }
   return b;
+};
+util.decodeBase64s = function(s, k, byB) {
+  var b = util.Base64.decode(s);
+  var x = util.UTF8.toByteArray(k);
+  var a = util._decodeBase64s(b, x);
+  if (!byB) a = util.UTF8.fromByteArray(a);
+  return a;
+};
+util._decodeBase64s = function(b, k) {
+  var bl = b.length;
+  var kl = k.length;
+  if ((bl == 0) || (kl == 0)) return b;
+  var p = b[0];
+  var al = bl - p;
+  var a = [];
+  for (var i = 1; i < al; i++) {
+    a.push(b[i] ^ k[(i - 1) % kl]);
+  }
+  return a;
 };
 
 //---------------------------------------------------------
