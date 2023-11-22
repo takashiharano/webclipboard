@@ -5,7 +5,7 @@
  * https://libutil.com/
  */
 var util = util || {};
-util.v = '202309181808';
+util.v = '202311212209';
 
 util.SYSTEM_ZINDEX_BASE = 0x7ffffff0;
 util.DFLT_FADE_SPEED = 500;
@@ -101,6 +101,14 @@ util.DateTime = function(src, tzOffset) {
   this.tzOffsetMin = tzOffsetMin;
   this.wday = dt.getDay(); // Sunday=0 - Saturday=6
   this.WDAYS = util.WDAYS;
+
+  this.yyyy = year + '';
+  this.mm = util.lpad(month, '0', 2);
+  this.dd = util.lpad(day, '0', 2);
+  this.hh = util.lpad(hour, '0', 2);
+  this.mi = util.lpad(minute, '0', 2);
+  this.ss = util.lpad(second, '0', 2);
+  this.sss = util.lpad(millisecond, '0', 3);
 };
 util.DateTime.prototype = {
   setWdays: function(wdays) {
@@ -310,6 +318,33 @@ util.getDateTimeString = function(a1, a2, a3) {
 util.getDateTimeFromTime = function(timeString, offset) {
   var t = util.getTimestampOfDay(timeString, offset);
   return util.getDateTime(t);
+};
+
+/**
+ * SUN=0 .. SAT=6
+ * dt: '20231001' -> 0
+ *     '20231002' -> 1
+ *     '20231007' -> 6
+ */
+util.getWday = function(dt) {
+  return util.getDateTime(dt).wday;
+};
+
+/**
+ * dt: '20231001' -> 31
+ *     '20231101' -> 30
+ */
+util.getLastDayOfMonth = function(dt) {
+  var E = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  var v = util.getDateTime(dt);
+  var m = v.month;
+  var d = E[m - 1];
+  if ((m == 2) && util.isLeapYear(v.year)) d = 29;
+  return d;
+};
+
+util.isLeapYear = function(y) {
+  return ((((y % 4) == 0) && ((y % 100) != 0)) || (y % 400 == 0));
 };
 
 /**
@@ -2195,6 +2230,23 @@ util._sort = function(a, b, desc, asNum) {
   return (desc ? (a < b ? 1 : -1) : (a > b ? 1 : -1));
 };
 
+/**
+ * {a: 50, b: 100, c: 20} -> {c: 20, a: 50, b: 100}
+ */
+util.sortObjectKeyByValue = function(o, desc, asNum) {
+  var lst = [];
+  for (var k in o) {
+    lst.push({k: k, v: o[k]});
+  }
+  lst.sort(function(a, b) {return util._sort(a.v, b.v, desc, asNum);});
+  var r = {};
+  for (var i = 0; i < lst.length; i++) {
+    var w = lst[i];
+    r[w.k] = w.v;
+  }
+  return r;
+};
+
 //---------------------------------------------------------
 // HTTP
 //---------------------------------------------------------
@@ -3185,7 +3237,7 @@ util.textarea.addStatusInfo = function(textarea, infoarea) {
   infoarea = util.getElement(infoarea);
   if (!infoarea) return;
   textarea.infoarea = infoarea;
-  util.textarea._adqdLIstener(textarea);
+  util.textarea._adqdListener(textarea);
 };
 /**
  * updateTextAreaInfo('#textarea-id')
@@ -3244,7 +3296,7 @@ util.updateTextAreaInfo = function(textarea) {
     listener(data);
   }
 };
-util.textarea._adqdLIstener = function(tgt) {
+util.textarea._adqdListener = function(tgt) {
   tgt.addEventListener('input', util.textarea.onInput);
   tgt.addEventListener('change', util.textarea.onInput);
   tgt.addEventListener('keydown', util.textarea.onInput);
@@ -3258,7 +3310,7 @@ util.textarea.addListener = function(tgt, f) {
   var el = util.getElement(tgt);
   if (el) {
     el.listener = f;
-    util.textarea._adqdLIstener(el);
+    util.textarea._adqdListener(el);
   }
 };
 
@@ -5682,8 +5734,12 @@ util.dialog.btnHandler = function(el) {
   var ctx = el.ctx;
   var data;
   if (ctx.opt) data = ctx.opt.data;
-  if (el.cb) el.cb(data);
-  ctx.close(ctx);
+  var f = true;
+  if (el.cb) {
+    f = el.cb(data);
+    if (f !== false) f = true;
+  }
+  if (f) ctx.close(ctx);
 };
 
 util.dialog.close = function(btnIdx) {
@@ -5840,8 +5896,8 @@ util.dialog.confirm = function(a1, a2, a3, a4, a5) {
   }
   if (a[k]) opt = a[k];
   var definition = {
-    labelY: 'Yes',
-    labelN: 'No',
+    labelY: (opt.labelY ? opt.labelY : 'Yes'),
+    labelN: (opt.labelN ? opt.labelN : 'No'),
     cbY: util.dialog.sysCbY,
     cbN: util.dialog.sysCbN,
   };
@@ -5875,7 +5931,8 @@ util.dialog.confirmDialog = function(title, content, definition, opt) {
     buttons: buttons,
     data: ctx,
     focusEl: definition.focusEl, // prior
-    style: opt.style
+    style: opt.style,
+    onenter: opt.onenter
   };
   ctx.dlg = util.dialog.open(content, dialogOpt);
 };
@@ -5885,10 +5942,14 @@ util.dialog.confirmDialog.prototype = {
   }
 };
 util.dialog.sysCbY = function(ctx) {
-  if (ctx.cbY) ctx.cbY(ctx.data);
+  var f;
+  if (ctx.cbY) f = ctx.cbY(ctx.data);
+  return f;
 };
 util.dialog.sysCbN = function(ctx) {
+  var f;
   if (ctx.cbN) ctx.cbN(ctx.data);
+  return f;
 };
 
 //-----------------------------------------------------------
@@ -5914,7 +5975,8 @@ util.dialog.sysCbN = function(ctx) {
  *     textbox: {
  *       ...
  *     }
- *   }
+ *   },
+ *   onenter: cb
  * };
  *
  * cb = function(data) {}
@@ -5925,6 +5987,7 @@ util.dialog.sysCbN = function(ctx) {
  *  dialog-content
  *  dialog-button
  *  dialog-textbox
+ *  dialog-textarea
  */
 util.dialog.text = function(a1, a2, a3, a4, a5) {
   var a = [a1, a2, a3, a4, a5];
@@ -5952,9 +6015,10 @@ util.dialog.text = function(a1, a2, a3, a4, a5) {
     k--;
   }
   if (a[k]) opt = a[k];
-  var txtBox = document.createElement('input');
+  var elType = ((opt.type == 'textarea') ? 'textarea' : 'input');
+  var txtBox = document.createElement(elType);
   txtBox.type = (opt.secure ? 'password' : 'text');
-  txtBox.className = 'dialog-textbox';
+  txtBox.className = ((opt.type == 'textarea') ? 'dialog-textarea' : 'dialog-textbox');
   if (opt && opt.style && opt.style.textbox) {
     for (var key in opt.style.textbox) {
       util.setStyle(txtBox, key, opt.style.textbox[key]);
@@ -5989,18 +6053,35 @@ util.dialog.text = function(a1, a2, a3, a4, a5) {
     focusEl: txtBox
   };
   var dialog = new util.dialog.confirmDialog(title, body, definition, opt);
+  txtBox.ctx = dialog;
+  if (elType == 'input') {
+    txtBox.addEventListener('keydown', util.dialog.text.onEnter);
+  }
   dialog.cbY = cbY;
   dialog.cbN = cbN;
   dialog.txtBox = txtBox;
   return dialog;
 };
 util.dialog.text.sysCbOK = function(ctx) {
+  var f;
   var text = ctx.txtBox.value;
-  if (ctx.cbY) ctx.cbY(text, ctx.data);
+  if (ctx.cbY) f = ctx.cbY(text, ctx.data);
+  return f;
 };
 util.dialog.text.sysCbCancel = function(ctx) {
+  var f;
   var text = ctx.txtBox.value;
-  if (ctx.cbN) ctx.cbN(text, ctx.data);
+  if (ctx.cbN) f = ctx.cbN(text, ctx.data);
+  return f;
+};
+util.dialog.text.onEnter = function(e) {
+  if (e.keyCode != 13) return;
+  var dlg = e.target.ctx.dlg;
+  var opt = dlg.opt;
+  if (opt.onenter) {
+    var b = dlg.btnEls[0];
+    util.dialog.btnHandler(b);
+  }
 };
 
 util.alert = function(a1, a2, a3, a4) {
@@ -6866,11 +6947,21 @@ util.Base64.decode = function(str) {
   return arr;
 };
 
-util.encodeBase64 = function(s) {
+util.encodeBase64 = function(s, b) {
+  return (b ? util.encodeBase64fmB(s) : util.encodeBase64fmT(s));
+};
+util.encodeBase64fmT = function(s) {
   if (s == undefined) return '';
   return btoa(encodeURIComponent(s).replace(/%([0-9A-F]{2})/g, function(match, p1) {return String.fromCharCode('0x' + p1);}));
 };
-util.decodeBase64 = function(s) {
+util.encodeBase64fmB = function(s) {
+  s = util.toBinaryString(s);
+  return btoa(s);
+};
+util.decodeBase64 = function(s, b) {
+  return (b ? util.decodeBase64asB(s) : util.decodeBase64asT(s));
+};
+util.decodeBase64asT = function(s) {
   if ((s == undefined) || !window.atob) return '';
   var r;
   try {
@@ -6881,6 +6972,23 @@ util.decodeBase64 = function(s) {
     r = atob(s);
   }
   return r;
+};
+util.decodeBase64asB = function(s) {
+  var b = atob(s);
+  var a = [];
+  for (var i = 0; i < b.length; i++) {
+    a.push(b[i].charCodeAt(0));
+  }
+  return new Uint8Array(a);
+};
+
+util.toBinaryString = function(a) {
+  var s = '';
+  var b = new Uint8Array(a);
+  for (var i = 0; i < b.byteLength; i++) {
+    s += String.fromCharCode(b[i]);
+  }
+  return s;
 };
 
 //---------------------------------------------------------
@@ -6893,20 +7001,20 @@ util.encodeBase64s = function(s, k) {
   return util.Base64.encode(b);
 };
 util._encodeBase64s = function(a, k) {
-  var al = a.length;
+  var ln = a.length;
   var kl = k.length;
-  if ((al == 0) || (kl == 0)) return a;
-  var p = kl - al;
-  if (p < 0) p = 0;
+  if ((ln == 0) || (kl == 0)) return a;
+  var d = kl - ln;
+  if (d < 0) d = 0;
   var b = [];
-  b.push(p);
-  for (var i = 0; i < al; i++) {
+  for (var i = 0; i < ln; i++) {
     b.push(a[i] ^ k[i % kl]);
   }
   var n = i;
-  for (i = 0; i < p; i++) {
+  for (i = 0; i < d; i++) {
     b.push(255 ^ k[(n + i) % kl]);
   }
+  b.push(d);
   return b;
 };
 util.decodeBase64s = function(s, k, byB) {
@@ -6916,17 +7024,17 @@ util.decodeBase64s = function(s, k, byB) {
   if (!byB) a = util.UTF8.fromByteArray(a);
   return a;
 };
-util._decodeBase64s = function(b, k) {
-  var bl = b.length;
+util._decodeBase64s = function(a, k) {
+  var al = a.length;
   var kl = k.length;
-  if ((bl == 0) || (kl == 0)) return b;
-  var p = b[0];
-  var al = bl - p;
-  var a = [];
-  for (var i = 1; i < al; i++) {
-    a.push(b[i] ^ k[(i - 1) % kl]);
+  if ((al == 0) || (kl == 0)) return a;
+  var d = a[al - 1];
+  var ln = al - d - 1;
+  var b = [];
+  for (var i = 0; i < ln; i++) {
+    b.push(a[i] ^ k[i % kl]);
   }
-  return a;
+  return b;
 };
 
 //---------------------------------------------------------
@@ -6981,10 +7089,10 @@ util.bit8.invert = function(v) {
 // BSB64
 //---------------------------------------------------------
 util.encodeBSB64 = function(s, n) {
-  var a = util.UTF8.toByteArray(s);
+  var a = ((typeof s == 'string') ? util.UTF8.toByteArray(s) : s);
   return util.BSB64.encode(a, n);
 };
-util.decodeBSB64 = function(s, n) {
+util.decodeBSB64 = function(s, n, byB) {
   if (s == undefined) return '';
   s = util.convertNewLine(s, '\n').replace(/\n/g, '');
   if (s.match(/\$\d+$/)) {
@@ -6993,7 +7101,8 @@ util.decodeBSB64 = function(s, n) {
     n = v[1];
   }
   var a = util.BSB64.decode(s, n);
-  return util.UTF8.fromByteArray(a);
+  if (!byB) a = util.UTF8.fromByteArray(a);
+  return a;
 };
 util.BSB64 = {};
 util.BSB64.encode = function(a, n) {
