@@ -23,7 +23,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.11.0</version>
+        <version>3.12.1</version>
         <configuration>
           <compilerVersion>${java.version}</compilerVersion>
           <source>${java.version}</source>
@@ -48,7 +48,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-javadoc-plugin</artifactId>
-        <version>3.6.2</version>
+        <version>3.6.3</version>
         <configuration>
           <author>true</author>
           <source>1.8</source>
@@ -72,7 +72,7 @@
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>build-helper-maven-plugin</artifactId>
-        <version>3.4.0</version>
+        <version>3.5.0</version>
         <executions>
           <execution>
             <id>timestamp-property</id>
