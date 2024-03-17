@@ -5,7 +5,7 @@
  * https://libutil.com/
  */
 var util = util || {};
-util.v = '202402240120';
+util.v = '202403091436';
 
 util.SYSTEM_ZINDEX_BASE = 0x7ffffff0;
 util.DFLT_FADE_SPEED = 500;
@@ -216,11 +216,12 @@ util._getTzPos = function(s) {
 
 /**
  * Format the date and time string in YYYYMMDDHHMISSsss format
- * 20200920                -> 20200920000000000
- * 20200920T1234           -> 20200920123400000
- * 20200920T123456.789     -> 20200920123456789
- * 2020-09-20 12:34:56.789 -> 20200920123456789
- * 2020/9/3 12:34:56.789   -> 20200903123456789
+ * 20200920                  -> 20200920000000000
+ * 20200920T1234             -> 20200920123400000
+ * 20200920T123456.789       -> 20200920123456789
+ * 20200920T123456.789+09:00 -> 20200920123456789+0900
+ * 2020-09-20 12:34:56.789   -> 20200920123456789
+ * 2020/9/3 12:34:56.789     -> 20200903123456789
  */
 util.serializeDateTime = function(s) {
   var a = util.splitDateTimeAndTZ(s);
@@ -1719,7 +1720,7 @@ util.snip = function(s, n1, n2, c) {
  * abc -> Abc
  */
 util.capitalize = function(s) {
-  return ((s && (typeof s == 'string')) ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s);
+  return (s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s);
 };
 
 util.null2empty = function(s) {
@@ -3112,7 +3113,7 @@ util.fn2text = function(f, s, e) {
 };
 
 /**
- * http://xxx/ -> <a href="http://xxx/">http://xxx/</a>
+ * URL -> <a href="URL">URL</a>
  */
 util.linkUrls = function(s, attr) {
   if (attr == undefined) attr = 'target="_blank" rel="noopener"';
