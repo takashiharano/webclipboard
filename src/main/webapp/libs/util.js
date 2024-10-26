@@ -5,7 +5,7 @@
  * https://libutil.com/
  */
 var util = util || {};
-util.v = '202407131220';
+util.v = '202410102254';
 
 util.SYSTEM_ZINDEX_BASE = 0x7ffffff0;
 util.DFLT_FADE_SPEED = 500;
@@ -55,7 +55,7 @@ util.DateTime = function(src, tzOffset) {
   } else if (src instanceof Date) {
     dt = src;
   } else {
-    if (util.isFloat(src)) src *= 1000;
+    if (util.isFloat(src)) src = Math.floor(src * 1000);
     dt = new Date(src);
   }
   var timestamp = dt.getTime();
@@ -125,6 +125,9 @@ util.DateTime.prototype = {
     var M = this.month + '';
     var MM = ('0' + M).slice(-2);
     var mName = util.MONTH[this.month - 1];
+    var mNameC = util.capitalize(mName);
+    var wName = this.WDAYS[this.wday];
+    var wNameC = util.capitalize(wName);
     var d = this.day;
     var dd = ('0' + d).slice(-2);
     var h = '' + this.hour;
@@ -146,11 +149,13 @@ util.DateTime.prototype = {
     r = r.replace(/%YYYY/g, yyyy);
     r = r.replace(/%YY/g, yy);
     r = r.replace(/%MMM/g, mName);
+    r = r.replace(/%Mmm/g, mNameC);
     r = r.replace(/%MM/g, MM);
     r = r.replace(/%M/g, M);
     r = r.replace(/%DD/g, dd);
     r = r.replace(/%D/g, d);
-    r = r.replace(/%W/g, this.WDAYS[this.wday]);
+    r = r.replace(/%W/g, wName);
+    r = r.replace(/%w/g, wNameC);
     r = r.replace(/%AMPM/g, ampm);
     r = r.replace(/%H12/g, h12);
     r = r.replace(/%HH12/g, hh12);
@@ -1493,7 +1498,7 @@ util.toJSON = function(o, r, s) {
 
 util.copyObject = function(src, dst) {
   if (src instanceof Array) {
-    if (!dst) dst = [];
+    if (!(dst instanceof Array)) dst = [];
     for (var i = 0; i < src.length; i++) {
       var v = src[i];
       if (v instanceof Object) {
@@ -1607,6 +1612,10 @@ util.isAscii = function(s) {
   return /^[\x20-\x7F\t\r\n]*$/.test(s);
 };
 
+util.isEmailAddress = function(s) {
+  return /^[\x21-\x5B\x5D-\x7E]{1,64}@[0-9A-Za-z.-]{1,189}$/.test(s);
+};
+
 /**
  * startsWith(string, pattern, position)
  * startsWith(string, pattern, case-insensitive)
@@ -1689,7 +1698,7 @@ util.lpad = function(str, pad, len, adj) {
   return r;
 };
 /**
- * rpad('str, '0', 5)
+ * rpad(str, '0', 5)
  * 'ABC'   -> 'ABC00'
  * 'ABCEF' -> 'ABCEF'
  * adj:
@@ -1720,7 +1729,21 @@ util.snip = function(s, n1, n2, c) {
 /**
  * abc -> Abc
  */
-util.capitalize = function(s) {
+util.capitalize = function(s, d) {
+  if (!s) return s;
+  var v = '';
+  if (d) {
+    var a = s.split(d);
+    for (var i = 0; i < a.length; i++) {
+      if (i > 0) v += d;
+      v += util._capitalize(a[i]);
+    }
+  } else {
+    v = util._capitalize(s);
+  }
+  return v;
+};
+util._capitalize = function(s) {
   return (s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s);
 };
 
@@ -2286,11 +2309,11 @@ util._sfx = function(a) {
   return a.replace(/^(\d+)(\.\d+)?([^\d]+)?/, '$3');
 };
 util._toNumE = function(a) {
-  var n = a.replace(/[^\d]+?(\d+)(\.\d+)?$/, '$1$2');
+  var n = a.replace(/^.+?(\d+)(\.\d+)?$/, '$1$2');
   return parseFloat(n);
 };
 util._toNumS = function(a) {
-  var n = a.replace(/^(\d+)(\.\d+)?[^\d]+?/, '$1$2');
+  var n = a.replace(/^(\d+)(\.\d+)?.+?$/, '$1$2');
   return parseFloat(n);
 };
 
@@ -2674,6 +2697,9 @@ $el.fn = {
   },
   fadeOut: function(speed, cb, arg) {
     util.fadeOut(this, speed, cb, arg);
+  },
+  updateTooltip: function(s) {
+    util.tooltip.update(this, s);
   },
   getRect: function() {
     return this.getBoundingClientRect();
@@ -3930,14 +3956,19 @@ util.infotip._show = function(obj, msg, style) {
     obj.el.pre = pre;
     document.body.appendChild(div);
   }
-  msg = (msg + '').replace(/\\n/g, '\n');
-  obj.el.pre.innerHTML = msg;
+  util.infotip.setMsg(obj, msg);
   document.body.appendChild(obj.el.body);
   if (obj.st == util.infotip.ST_SHOW) {
     util.infotip.setHideTimer(obj);
   } else {
     obj.st = util.infotip.ST_FADEIN;
     setTimeout(util.infotip.fadeIn, 10, obj);
+  }
+};
+util.infotip.setMsg = function(obj, msg) {
+  if (obj.el.pre) {
+    msg = (msg + '').replace(/\\n/g, '\n');
+    obj.el.pre.innerHTML = msg;
   }
 };
 
@@ -4188,6 +4219,15 @@ util.tooltip.onTimeout = function() {
 
 util.tooltip.setDelay = function(ms) {
   util.tooltip.DELAY = ms;
+};
+
+util.tooltip.update = function(el, s) {
+  if (!el.dataset.tooltip) return;
+  el.dataset.tooltip = s;
+  var obj = util.tooltip.obj;
+  if ((el == util.tooltip.targetEl) && (obj.st >= util.infotip.ST_OPEN)) {
+    util.infotip.setMsg(obj, s);
+  }
 };
 
 //---------------------------------------------------------
@@ -4474,9 +4514,8 @@ util.loadingScreen.create = function(msg, m, html) {
     msg.innerHTML = m;
     util.loadingScreen.msg = msg;
   }
-  styles = {background: 'rgba(0,0,0,0.3)'};
   var closeAnywhere = false;
-  var modal = util.modal.show(outerWrp, closeAnywhere, styles);
+  var modal = util.modal.show(outerWrp, closeAnywhere);
   util.loadingScreen.modal = modal;
   util.setStyle(document.body, 'cursor', 'progress');
 };
@@ -4567,6 +4606,8 @@ util.Window = function(opt) {
   util.Window.registerWindow(ctx);
   ctx.id = util.Window.cnt;
   opt = util.copyDefaultProps(util.Window.DFLT_OPT, opt);
+  if (typeof opt.width == 'number') opt.width += 'px';
+  if (typeof opt.height == 'number') opt.height += 'px';
   ctx.opt = opt;
   ctx.name = opt.name;
   ctx.group = opt.group;
@@ -4645,8 +4686,8 @@ util.Window.CHR_WIN_RSTR = '&#x2750;';
 util.Window.DFLT_OPT = {
   name: '',
   group: '',
-  width: 640,
-  height: 400,
+  width: '640px',
+  height: '400px',
   minWidth: 0,
   minHeight: 0,
   maxWidth: 0,
@@ -4719,7 +4760,7 @@ util.Window.prototype = {
       'z-index': util.Window.BASE_ZINDEX
     };
     util.setStyle(win, s);
-    util.setStyle(win, {width: opt.width + 'px', height: opt.height + 'px'}, false);
+    util.setStyle(win, {width: opt.width, height: opt.height}, false);
     util.setStyle(win, opt.style);
     if (opt.className) win.className += ' ' + opt.className;
 
@@ -5573,17 +5614,18 @@ util.Window.closeAll = function() {
 // Modal
 //---------------------------------------------------------
 util.MODAL_ZINDEX = util.SYSTEM_ZINDEX_BASE;
-util.modal = function(child, addCloseHandler) {
+util.modal = function(child, rmvByClick, rmvByClickCb) {
   this.sig = 'modal';
   var el = document.createElement('div');
   var style = util.copyObject(util.modal.DFLT_STYLE);
   if (util.modal.style) util.copyObject(util.modal.style, style);
   util.setStyle(el, style);
   el.style.opacity = '0';
-  if (addCloseHandler) el.addEventListener('click', this.onClick);
+  if (rmvByClick) el.addEventListener('click', this.onClick);
   if (child) el.appendChild(child);
   el.ctx = this;
   this.el = el;
+  this.rmvByClickCb = rmvByClickCb;
 };
 util.modal.prototype = {
   show: function() {
@@ -5614,11 +5656,15 @@ util.modal.prototype = {
   },
   onClick: function(e) {
     var el = e.target;
-    if (el.ctx && (el.ctx.sig == 'modal')) el.ctx.hide();
+    var ctx = el.ctx;
+    if (ctx && (ctx.sig == 'modal')) {
+      if (ctx.rmvByClickCb) ctx.rmvByClickCb();
+      ctx.hide();
+    }
   }
 };
-util.modal.show = function(el, closeAnywhere) {
-  var m = new util.modal(el, closeAnywhere).show();
+util.modal.show = function(el, closeAnywhere, onclose) {
+  var m = new util.modal(el, closeAnywhere, onclose).show();
   util.modal.ctxs.push(m);
   return m;
 };
@@ -5680,7 +5726,8 @@ util.modal.ctxs = [];
  *       ...
  *     }
  *   },
- *   closeAnywhere: true|false
+ *   closeAnywhere: true|false,
+ *   onclose: function,
  *   data: object
  * }
  *
@@ -5703,7 +5750,7 @@ util.dialog = function(content, opt) {
     if (opt.closeAnywhere) closeAnywhere = true;
   }
 
-  ctx.modal = util.modal.show(ctx.el, closeAnywhere);
+  ctx.modal = util.modal.show(ctx.el, closeAnywhere, opt.onclose);
   setTimeout(util.dialog.focusBtn, 10);
 };
 util.dialog.prototype = {
@@ -5849,13 +5896,8 @@ util.dialog.show = function() {
 //   style: {
 //     styles
 //   },
-//   modal: {
-//     closeAnywhere: true|false,
-//     style: {
-//       name: value,
-//       ...
-//     }
-//   },
+//   closeAnywhere: true|false,
+//   onclose: function,
 //   data: object
 // }
 util.dialog.open = function(content, opt) {
@@ -6074,16 +6116,12 @@ util.dialog.confirmDialog = function(title, content, definition, opt) {
   var focusIdx = 0;
   if (opt.focus == 'no') focusIdx = 1;
   buttons[focusIdx].focus = true;
-  var dialogOpt = {
-    title: title,
-    buttons: buttons,
-    data: ctx,
-    focusEl: definition.focusEl, // prior
-    className: opt.className,
-    style: opt.style,
-    onenter: opt.onenter
-  };
-  ctx.dlg = util.dialog.open(content, dialogOpt);
+  var dlgOpt = opt;
+  dlgOpt.title = title;
+  dlgOpt.buttons = buttons;
+  dlgOpt.data = ctx;
+  dlgOpt.focusEl = definition.focusEl;
+  ctx.dlg = util.dialog.open(content, dlgOpt);
 };
 util.dialog.confirmDialog.prototype = {
   pressButton: function(n) {
@@ -7919,7 +7957,7 @@ util.longitude = function(location) {
 };
 
 // m/s -> km/h
-util.ms2kmh = function(speed) {
+util.mps2kmph = function(speed) {
   var kmh = speed * 60 * 60 / 1000;
   kmh = Math.round(kmh * 10) / 10;
   return kmh;
