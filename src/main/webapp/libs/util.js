@@ -1,11 +1,11 @@
 /*!
  * util.js
  * Copyright 2019 Takashi Harano
- * Released under the MIT license
+ * Released under the MIT License
  * https://libutil.com/
  */
 var util = util || {};
-util.v = '202501121224';
+util.v = '202608070047';
 
 util.SYSTEM_ZINDEX_BASE = 0x7ffffff0;
 util.DFLT_FADE_SPEED = 500;
@@ -43,6 +43,7 @@ util.MONTH = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OC
  */
 util.DateTime = function(src, tzOffset) {
   var dt, st;
+  var srcType = 0;
   if (!src && (src !== 0)) {
     dt = new Date();
   } else if (typeof src == 'string') {
@@ -51,15 +52,15 @@ util.DateTime = function(src, tzOffset) {
       tzOffset = undefined;
     }
     st = util.str2datestruct(src);
-    dt = new Date(st.year, st.month - 1, st.day, st.hour, st.minute, st.second);
+    dt = new Date(st.year, st.month - 1, st.day, st.hour, st.minute, st.second, st.millisecond);
   } else if (src instanceof Date) {
     dt = src;
   } else {
     if (util.isFloat(src)) src = Math.floor(src * 1000);
     dt = new Date(src);
+    srcType = 1;
   }
   var timestamp = dt.getTime();
-
   if (tzOffset == undefined) {
     tzOffset = ((st && st.tz) ? st.tz : util.getLocalTZ());
   } else {
@@ -71,7 +72,6 @@ util.DateTime = function(src, tzOffset) {
 
   this.tz = '';
   if (st) {
-    timestamp += st.millisecond;
     if (st.tz != '') {
       var tzdf = util.getOffsetFromLocalTz(st.tz);
       timestamp -= tzdf;
@@ -79,6 +79,7 @@ util.DateTime = function(src, tzOffset) {
     this.tz = st.tz;
   }
 
+  if (srcType) timestamp = src;
   var tzOffsetMin = tzOffset;
   if (typeof tzOffset == 'string') tzOffsetMin = util.tz2ms(tzOffset) / 60000;
   var year = dt.getFullYear();
@@ -170,7 +171,7 @@ util.DateTime.prototype = {
     r = r.replace(/%z/g, this.getTZ());
     r = r.replace(/%Z/g, this.getTZ(true));
     r = r.replace(/%N/g, util.getLocalTzName());
-    r = r.replace(/\\/g, '');
+    r = r.replace(/%t/g, this.timestamp + '');
     return r;
   }
 };
@@ -1499,6 +1500,10 @@ util.randomString = function(a1, a2, a3) {
     }
   }
   return s;
+};
+
+util.generateUUID = function() {
+  return crypto.randomUUID();
 };
 
 //---------------------------------------------------------
