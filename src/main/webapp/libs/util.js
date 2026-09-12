@@ -5,7 +5,7 @@
  * https://libutil.com/
  */
 var util = util || {};
-util.v = '202608151400';
+util.v = '202609121203';
 
 util.SYSTEM_ZINDEX_BASE = 0x7ffffff0;
 util.DFLT_FADE_SPEED = 500;
@@ -39,7 +39,7 @@ util.MONTH = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OC
  * src:
  *  timestamp (millis from 1970-01-01T00:00:00Z) / Date-Time-String / Date object
  * tzOffset: (OPT)
- *  -480='-0800' / 0='+0000'='Z' / 540='+0900'
+ *  -8='-0800' / 0='+0000'='Z' / 9='+0900' / 9.5='+0930'
  */
 util.DateTime = function(src, tzOffset) {
   var dt, st;
@@ -48,13 +48,15 @@ util.DateTime = function(src, tzOffset) {
     dt = new Date();
   } else if (typeof src == 'string') {
     if (tzOffset != undefined) {
-      src += tzOffset;
+      src += ((typeof tzOffset == 'number') ? util.formatTZ(tzOffset) : tzOffset);
       tzOffset = undefined;
     }
     st = util.str2datestruct(src);
     dt = new Date(st.year, st.month - 1, st.day, st.hour, st.minute, st.second, st.millisecond);
   } else if (src instanceof Date) {
     dt = src;
+    src = dt.getTime();
+    srcType = 1;
   } else {
     if (util.isFloat(src)) src = Math.floor(src * 1000);
     dt = new Date(src);
@@ -64,8 +66,7 @@ util.DateTime = function(src, tzOffset) {
   if (tzOffset == undefined) {
     tzOffset = ((st && st.tz) ? st.tz : util.getLocalTZ());
   } else {
-    var os = tzOffset;
-    if (typeof os == 'string') os = util.getOffsetFromLocalTz(os);
+    var os = util.getOffsetFromLocalTz(tzOffset);
     dt = new Date(timestamp + os);
     timestamp = dt.getTime();
   }
@@ -80,8 +81,7 @@ util.DateTime = function(src, tzOffset) {
   }
 
   if (srcType) timestamp = src;
-  var tzOffsetMin = tzOffset;
-  if (typeof tzOffset == 'string') tzOffsetMin = util.tz2ms(tzOffset) / 60000;
+  if (typeof tzOffset == 'string') tzOffset = util.tz2ms(tzOffset) / util.HOUR;
   var year = dt.getFullYear();
   var month = dt.getMonth() + 1;
   var day = dt.getDate();
@@ -99,7 +99,6 @@ util.DateTime = function(src, tzOffset) {
   this.second = second;
   this.millisecond = millisecond;
   this.tzOffset = tzOffset;
-  this.tzOffsetMin = tzOffsetMin;
   this.wday = dt.getDay(); // Sunday=0 - Saturday=6
   this.WDAYS = util.WDAYS;
 
@@ -117,7 +116,7 @@ util.DateTime.prototype = {
   },
   // -> '+0900' / ext=true: '+09:00'
   getTZ: function(ext) {
-    return util.formatTZ(this.tzOffsetMin, ext);
+    return util.formatTZ(this.tzOffset, ext);
   },
   toString: function(fmt) {
     if (!fmt) fmt = '%YYYY-%MM-%DD %HH:%mm:%SS.%sss %Z';
@@ -139,12 +138,10 @@ util.DateTime.prototype = {
     var SS = ('0' + S).slice(-2);
     var sss = ('00' + this.millisecond).slice(-3);
     var s = util.trimTrailingZeros(sss);
-    var ampm = 'AM';
-    var h12 = '' + this.hour;
-    if (this.hour >= 12) {
-      ampm = 'PM';
-      h12 = (this.hour - 12) + '';
-    }
+    var ampm = (this.hour >= 12) ? 'PM' : 'AM';
+    var h12 = this.hour % 12;
+    if (h12 == 0) h12 = 12;
+    h12 += '';
     var hh12 = ('0' + h12).slice(-2);
     var r = fmt;
     r = r.replace(/%YYYY/g, yyyy);
@@ -390,37 +387,41 @@ util.getTimestampOfDay = function(timeString, offset) {
 
 /**
  * Returns the midnight timestamp of the date-time.
- * dt: date-time string or timestamp in millis
- * offset: TZ offset. '-1200' to '+1400' (abs) / -12 to 14 (rel)
+ * dt: date-time string / timestamp in millis / Date object
+ * offset: TZ offset. -12 or '-1200' to 14 or '+1400'
  * 1628679929040 -> 1628640000000 (offset='+0000')
  */
 util.getMidnightTimestamp = function(dt, offset) {
-  var ms = dt;
-  var os = 0;
+  var ms;
   if (dt == undefined) {
-    dt = util.getDateTime();
+    ms = Date.now();
   } else if (typeof dt == 'string') {
-    dt = util.getDateTime(dt);
-    ms = dt.timestamp;
-    if ((offset == undefined) && dt.tz) os = util.getOffsetFromLocalTz(dt.tz);
+    var t = util.getDateTime(dt);
+    if (offset == undefined) {
+      if (t.tz) offset = t.tz;
+    } else if (!t.tz) {
+      t = util.getDateTime(dt, offset);
+    }
+    ms = t.timestamp;
+  } else if (dt instanceof Date) {
+    ms = dt.getTime();
+  } else {
+    ms = dt;
   }
-  if (offset != undefined) {
-    os = ((typeof offset == 'string') ? util.getOffsetFromLocalTz(offset) : offset * 3600000);
+  if (offset == undefined) {
+    var d = new Date(ms);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   }
-  var t = ((typeof dt == 'number') ? util.getDateTime(ms) : dt);
-  var d = new Date(t.year, t.month - 1, t.day);
-  var r = new util.DateTime(d).timestamp;
-  return r - os;
+  var os = ((typeof offset == 'string') ? util.tz2ms(offset) : offset * util.HOUR);
+  d = new Date(ms + os);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - os;
 };
 
 /**
- * Returns time zone offset string from hours/minutes
+ * Returns time zone offset string from hours
  * -8         -> -0800
  *  9         -> +0900
  *  9, true   -> +09:00
- * -480       -> -0800
- *  540       -> +0900
- *  540, true -> +09:00
  */
 util.formatTZ = function(v, e) {
   var s = '+';
@@ -429,8 +430,7 @@ util.formatTZ = function(v, e) {
     s = '-';
     v *= -1;
   }
-  var f = ((v <= 24) ? util.formatTzH : util.formatTzM);
-  var str = s + f(v);
+  var str = s + util.formatTzH(v);
   if (e) str = str.slice(0, 3) + ':' + str.slice(3, 5);
   return str;
 };
@@ -438,11 +438,6 @@ util.formatTzH = function(v) {
   var w = ('' + v).split('.');
   var h = +w[0];
   var m = +('0.' + (w[1] | 0)) * 60;
-  return ('0' + h).slice(-2) + ('0' + m).slice(-2);
-};
-util.formatTzM = function(v) {
-  var h = (v / 60) | 0;
-  var m = v - h * 60;
   return ('0' + h).slice(-2) + ('0' + m).slice(-2);
 };
 
@@ -474,11 +469,18 @@ util.normalizeTZ = function(s) {
  * '09:30' -> 9.5
  */
 util.clock2hours = function(s) {
+  var sign = 1;
+  if (s.charAt(0) == '-') {
+    sign = -1;
+    s = s.slice(1);
+  } else if (s.charAt(0) == '+') {
+    s = s.slice(1);
+  }
   s = s.replace(/:/, '');
   var p = s.length - 2;
   var h = s.slice(0, p) | 0;
   var m = s.slice(p, p + 2) | 0;
-  return h + (m / 60);
+  return (h + (m / 60)) * sign;
 };
 
 /**
@@ -508,7 +510,7 @@ util.hours2clock = function(s, sep) {
  * ext=true: +09:00
  */
 util.getLocalTZ = function(ext) {
-  return util.formatTZ(new Date().getTimezoneOffset() * (-1), ext);
+  return util.formatTZ(new Date().getTimezoneOffset() / -60, ext);
 };
 
 /**
@@ -526,15 +528,6 @@ util.getLocalTzName = function() {
   var n = Intl.DateTimeFormat().resolvedOptions().timeZone;
   if (!n) n = '';
   return n;
-};
-
-/**
- * Returns local TZ offset in minutes
- * at +0900 ->  540
- * at -0800 -> -480
- */
-util.getLocalTzOffsetMin = function() {
-  return new Date().getTimezoneOffset() * -1;
 };
 
 /**
@@ -842,6 +835,11 @@ util.sec2ms = function(sec) {
  * -> '1.200' (toString=true)
  */
 util.ms2sec = function(ms, toString) {
+  var sign = '';
+  if (ms < 0) {
+    sign = '-';
+    ms *= -1;
+  }
   ms += '';
   var len = ms.length;
   var s;
@@ -850,6 +848,7 @@ util.ms2sec = function(ms, toString) {
   } else {
     s = ms.slice(0, len - 3) + '.' + ms.slice(len - 3);
   }
+  s = sign + s;
   if (!toString) s = parseFloat(s);
   return s;
 };
@@ -890,14 +889,13 @@ util.timecounter.start = function(el, t0, opt) {
  * Stop displaying the time difference
  */
 util.timecounter.stop = function(el, t0, opt) {
-  var v = 0;
   var o = util.timecounter.getObj(el);
   if (!o) {
     o = new util.TimeCounter(el, t0, opt);
     util.timecounter.objs[o.id] = o;
   }
   if (t0 != undefined) o.t0 = t0;
-  v = o.update(o);
+  var v = o.update(o);
   o.stop();
   delete util.timecounter.objs[o.id];
   return v;
@@ -1030,7 +1028,7 @@ util.clock.stop = function(el) {
 util.Clock = function(el, opt) {
   if (typeof opt == 'string') {
     opt = {fmt: opt};
-  } else if (typeof a1 == 'number') {
+  } else if (typeof opt == 'number') {
     opt = {offset: opt};
   }
   opt = util.copyDefaultProps(util.Clock.DFLT_OPT, opt);
@@ -1334,6 +1332,10 @@ util.ceil = function(num, scale) {
   return util._shift(Math.ceil(util._shift(num, scale, false)), scale, true);
 };
 
+util.trunc = function(num, scale) {
+  return util._shift(Math.trunc(util._shift(num, scale, false)), scale, true);
+};
+
 util._shift = function(num, scale, reverseShift) {
   if (scale == undefined) scale = 0;
   if (reverseShift) scale = -scale;
@@ -1344,12 +1346,15 @@ util._shift = function(num, scale, reverseShift) {
 // 123   , 1 -> '123.0'
 // 123.4 , 1 -> '123.4'
 // 123.45, 1 -> '123.5'
-// type: 0=floor / 1=round / 2=ceil
+// type: 'round'|'floor'|'ceil'|'trunc' (default='round')
 // zero: true=0 / false=0.0
 util.alignDecimal = function(v, scale, type, zero) {
-  var F = [util.floor, util.round, util.ceil];
-  var f = F[type | 0];
-  if (!f) f = F[0];
+  var f = util.round;
+  switch (type) {
+    case 'floor': f = util.floor; break;
+    case 'ceil': f = util.ceil; break;
+    case 'trunc': f = util.trunc; break;
+  }
   v = f(v, scale);
   if (zero && v == 0) return 0;
   return util.alignDecimalZero(v, scale);
@@ -1489,7 +1494,6 @@ util.randomString = function(a1, a2, a3) {
   }
   if (typeof a3 == 'number') max = a3;
   if (!tbl) tbl = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  if (typeof tbl == 'string') tbl = tbl.split('');
   if (min == -1) min = DFLT_LEN;
   if (max == -1) max = min;
   var s = '';
@@ -1531,8 +1535,7 @@ util.copyObject = function(src, dst) {
     if (!dst) dst = {};
     for (var k in src) {
       if (src[k] instanceof Object) {
-        dst[k] = {};
-        util.copyObject(src[k], dst[k]);
+        dst[k] = util.copyObject(src[k]);
       } else {
         dst[k] = src[k];
       }
@@ -1542,12 +1545,23 @@ util.copyObject = function(src, dst) {
 };
 
 util.copyDefaultProps = function(dflt, tgt) {
-  if (!tgt) tgt = {};
+  var type = util.objtype(dflt);
+  if (!tgt) tgt = ((type == '[object Array]') ? [] : {});
   for (var k in dflt) {
-    if (!(k in tgt)) {
-      tgt[k] = dflt[k];
-    } else if (tgt[k] instanceof Object) {
-      util.copyDefaultProps(dflt[k], tgt[k]);
+    if (!Object.prototype.hasOwnProperty.call(dflt, k)) continue;
+    var v = dflt[k];
+    var vType = util.objtype(v);
+    if (k in tgt) {
+      var tType = util.objtype(tgt[k]);
+      if ((vType == tType) && ((vType == '[object Object]') || (vType == '[object Array]'))) {
+        util.copyDefaultProps(v, tgt[k]);
+      }
+    } else {
+      if ((vType == '[object Object]') || (vType == '[object Array]')) {
+        tgt[k] = util.copyDefaultProps(v);
+      } else {
+        tgt[k] = v;
+      }
     }
   }
   return tgt;
@@ -1578,12 +1592,11 @@ util.objtype = function(o) {
  * n=3: ['ABC', 'DEF']
  */
 util.divideString = function(s, n) {
-  if ((s == undefined) || (s == null)) return s;
+  if (s == null) return s;
   if ((n <= 0) || (s == '')) return [s];
   var a = [];
-  for (var i = 0; i < s.length / n; i++) {
-    var st = i * n;
-    a.push(s.slice(st, st + n));
+  for (var i = 0; i < s.length; i += n) {
+    a.push(s.slice(i, i + n));
   }
   return a;
 };
@@ -1643,20 +1656,17 @@ util.isEmailAddress = function(s) {
  */
 util.startsWith = function(s, p, a3, a4) {
   if (s == null) return false;
-  var a = [a3, a4];
   var o = 0;
-  var i = 0;
+  var ci = a3;
   if (typeof a3 == 'number') {
     o = a3;
-    i++;
+    ci = a4;
   }
-  var ci = a[i];
   if (o) s = s.slice(o);
   if ((s == '') && (p == '')) return true;
   if (p == '') return false;
-  var f = (ci ? 'i' : '');
-  var re = new RegExp('^' + p, f);
-  return s.match(re) != null;
+  var re = new RegExp('^' + p, ci ? 'i' : '');
+  return re.test(s);
 };
 
 /**
@@ -1666,20 +1676,17 @@ util.startsWith = function(s, p, a3, a4) {
  */
 util.endsWith = function(s, p, a3, a4) {
   if (s == null) return false;
-  var a = [a3, a4];
   var l = 0;
-  var i = 0;
+  var ci = a3;
   if (typeof a3 == 'number') {
     l = a3;
-    i++;
+    ci = a4;
   }
-  var ci = a[i];
   if (l) s = s.slice(0, l);
   if ((s == '') && (p == '')) return true;
   if (p == '') return false;
-  var f = (ci ? 'i' : '');
-  var re = new RegExp(p + '$', f);
-  return s.match(re) != null;
+  var re = new RegExp(p + '$', ci ? 'i' : '');
+  return re.test(s);
 };
 
 util.repeatCh = function(c, n) {
@@ -1711,9 +1718,10 @@ util.insertCh = function(s, ch, n) {
 util.lpad = function(str, pad, len, adj) {
   var r = str + '';
   var d = len - r.length;
-  if (d <= 0) return r;
-  var pd = util.repeatCh(pad, d);
-  r = pd + r;
+  if (d > 0) {
+    var pd = util.repeatCh(pad, d);
+    r = pd + r;
+  }
   if (adj) r = r.slice(0, len);
   return r;
 };
@@ -1727,9 +1735,10 @@ util.lpad = function(str, pad, len, adj) {
 util.rpad = function(str, pad, len, adj) {
   var r = str + '';
   var d = len - r.length;
-  if (d <= 0) return r;
-  var pd = util.repeatCh(pad, d);
-  r += pd;
+  if (d > 0) {
+    var pd = util.repeatCh(pad, d);
+    r += pd;
+  }
   if (adj) r = r.slice(0, len);
   return r;
 };
@@ -1900,9 +1909,9 @@ util.clipTextLine = function(s, p) {
   return s.replace(/.*\n/g, '');
 };
 
-util.toBin = function(v, uc, d, pFix) {
+util.toBin = function(v, d, pFix) {
   var bin = parseInt(v).toString(2);
-  return util.formatBin(bin, uc, d, pFix);
+  return util.formatBin(bin, d, pFix);
 };
 util.formatBin = function(bin, d, pFix) {
   if ((d) && (bin.length < d)) {
@@ -1933,8 +1942,7 @@ util.formatNumber = function(v) {
   if (!v.match(/\d+/)) return v;
   var d = v.replace(/.*?(\d+).*/, '$1');
   var f = util.separateDigits(d);
-  var re = new RegExp(d);
-  return v.replace(re, f);
+  return v.replace(d, f);
 };
 util.separateDigits = function(v) {
   var len = v.length;
@@ -1993,8 +2001,8 @@ util.convByte = function(v, scale, sep, sp) {
   if (scale == undefined) scale = 1;
   var r = util.floor(b, scale);
   if (sep) r = util.formatNumber(r);
-  w = (r + '').split('.');
   if ((scale > 0) && (r != 0)) {
+    w = (r + '').split('.');
     var z = util.repeatCh('0', scale);
     if (w.length > 1) {
       r = w[0] + '.' + ((w[1] += z).slice(0, scale));
@@ -2057,9 +2065,7 @@ util.xlscolA2N = function(c) {
   return util.strpIndex(util.A2Z, c.trim().toUpperCase());
 };
 util.xlscolN2A = function(n) {
-  var a = util.strp(util.A2Z, n);
-  if (n <= 0) a = '';
-  return a;
+  return ((n > 0) ? util.strp(util.A2Z, n) : '');
 };
 util.xlscolShift = function(c, o) {
   var n = util.xlscolA2N(c);
@@ -2074,7 +2080,6 @@ util.xlscolShift = function(c, o) {
  * strp('ABC', 4) -> 'AA'
  */
 util.strp = function(tbl, idx) {
-  if (typeof tbl == 'string') tbl = tbl.split('');
   var len = tbl.length;
   var a = [-1];
   for (var i = 0; i < idx; i++) {
@@ -2107,18 +2112,17 @@ util.strp = function(tbl, idx) {
  * strpIndex('ABC', 'AA') -> 4
  */
 util.strpIndex = function(tbl, ptn) {
-  if (typeof tbl == 'string') tbl = tbl.split('');
   var len = ptn.length;
   var rdx = tbl.length;
   var idx = 0;
+  var p = 1;
   for (var i = 0; i < len; i++) {
     var d = len - i - 1;
-    var c = ptn.slice(d, d + 1);
-    var v = tbl.indexOf(c);
+    var v = tbl.indexOf(ptn[d]);
     if (v == -1) return 0;
     v++;
-    var n = v * Math.pow(rdx, i);
-    idx += n;
+    idx += v * p;
+    p *= rdx;
   }
   return idx;
 };
@@ -2129,11 +2133,12 @@ util.strpIndex = function(tbl, ptn) {
  * strpTotal('ABC', 2) -> 12
  */
 util.strpTotal = function(tbl, d) {
-  if (typeof tbl == 'string') tbl = tbl.split('');
   var c = tbl.length;
   var n = 0;
+  var p = c;
   for (var i = 1; i <= d; i++) {
-    n += Math.pow(c, i);
+    n += p;
+    p *= c;
   }
   return n;
 };
@@ -2498,7 +2503,7 @@ util.http.onDone = function(xhr, req) {
     util._log.v('[' + req.trcid + '] ' + m);
   }
   if (util.http.onReceive(xhr, res, req)) {
-    if (st == 200) {
+    if ((st >= 200) && (st < 300)) {
       if (util.http.isJSONable(xhr, req)) {
         try {
           res = util.fromJSON(res);
@@ -2632,7 +2637,7 @@ util.http.listeners = {
 //---------------------------------------------------------
 var $el = function(tgt, idx) {
   var el = util.getElement(tgt, idx);
-  if (el) {
+  if (el && ((el.toString() != '[object NodeList]') || (el.length > 0))) {
     for (var k in $el.fn) {
       if (el[k] == undefined) el[k] = $el.fn[k];
     }
@@ -2776,14 +2781,14 @@ util.getElement = function(tgt, idx) {
   return el;
 };
 
-util.callFn4El = function(f, el, a1, a2) {
+util.callFn4El = function(f, el, a1, a2, a3) {
   var r;
   if (el.toString() == '[object NodeList]') {
     for (var i = 0; i < el.length; i++) {
-      r = f(el[i], a1, a2);
+      r = f(el[i], a1, a2, a3);
     }
   } else {
-    r = f(el, a1, a2);
+    r = f(el, a1, a2, a3);
   }
   return r;
 };
@@ -3353,6 +3358,7 @@ util.color.getS = function(r, g, b) {
   var a = util.color.sortRGB(r, g, b);
   var min = a[0];
   var max = a[2];
+  if (max == 0) return 0;
   var s = (max - min) / max;
   return Math.round(s * 255);
 };
@@ -3366,6 +3372,7 @@ util.color.sortRGB = function(r, g, b) {
 
 //---------------------------------------------------------
 util.textarea = {};
+util.textarea.CTCH = {0: 'NUL', 9: 'TAB', 10: 'LF', 11: 'ESC', 32: 'SP', 127: 'DEL', 12288: 'emSP'};
 /**
  * addStatusInfo('#textarea-id', '#infoarea-id')
  */
@@ -3395,12 +3402,11 @@ util.updateTextAreaInfo = function(textarea) {
   var ch = util.str2chars(txt)[st] || '';
   var u10 = util.getCodePoint(ch);
   var u16 = util.getUnicodePoints(ch, true);
-  var CTCH = {0: 'NUL', 9: 'TAB', 10: 'LF', 11: 'ESC', 32: 'SP', 127: 'DEL', 12288: 'emSP'};
   if (isNaN(u10)) {
     ch = '[END]';
     u16 = 'U+----';
-  } else if (CTCH[u10]) {
-    ch = CTCH[u10];
+  } else if (util.textarea.CTCH[u10]) {
+    ch = util.textarea.CTCH[u10];
   }
   if (textarea.infoarea) {
     var cp = ch + '&nbsp;' + u16 + (u10 ? '(' + u10 + ')' : '');
@@ -3408,9 +3414,12 @@ util.updateTextAreaInfo = function(textarea) {
     var l = (t.match(/\n/g) || []).length + 1;
     var c = t.replace(/.*\n/g, '').length + 1;
     var tc = util.clipTextLine(txt, st).length;
-    var slT = txt.substring(st, ed);
-    var slL = util.countLineBreak(slT) + 1;
-    var slct = (sl ? ' SEL:' + ('LEN=' + sl + '/L=' + slL) : '');
+    var slct = '';
+    if (sl) {
+      var slT = txt.substring(st, ed);
+      var slL = util.countLineBreak(slT) + 1;
+      slct = ' SEL:LEN=' + sl + '/L=' + slL;
+    }
     var s = cp;
     s += ' ' + l + ':' + c + ' ';
     s += ' C=' + tc + ' L=' + tl;
@@ -3513,13 +3522,18 @@ util._clearHTML = function(el) {
  */
 util.textseq = function(el, text, opt) {
   el = util.getElement(el);
+  var textseqCtx = el.$$textseqCtx;
+  if (textseqCtx) {
+    if (textseqCtx.tmrId > 0) clearTimeout(textseqCtx.tmrId);
+    delete el.$$textseqCtx;
+  }
   if (!opt) opt = {};
   var cursor = opt.cursor;
   if (typeof opt.cursor == 'number') delete opt.cursor;
   util.copyDefaultProps(util.textseq.DFLT_OPT, opt);
   if (typeof cursor == 'number') opt.cursor.n = cursor;
   if (text instanceof Array) {
-    el.$$textseqCtx = {textList: text, idx: 0, opt: opt};
+    el.$$textseqCtx = {textList: text, idx: 0, opt: opt, tmrId: 0};
     text = text[0];
   }
   return util.textseq1(el, text, opt);
@@ -3536,10 +3550,9 @@ util.textseq.DFLT_OPT = {
   oncomplete: null // <callback-function(ctx)>
 };
 util.textseq1 = function(el, text, opt) {
-  var ctx = util.getCtx4El(util.textseq.ctxs, el);
-  if (ctx) util.textseq._stop(ctx);
-  ctx = util.textseq.createCtx(el, text, opt);
   var i = util.getCtxIdx4El(util.textseq.ctxs, el);
+  if (i >= 0) util.textseq._stop(util.textseq.ctxs[i]);
+  var ctx = util.textseq.createCtx(el, text, opt);
   if (i < 0) {
     util.textseq.ctxs.push(ctx);
   } else {
@@ -3643,18 +3656,25 @@ util.textseq.onprogress = function(ctx, pos, prevPos, cutLen) {
 util.textseq.oncomplete = function(ctx) {
   var el = ctx.el;
   var i = util.getCtxIdx4El(util.textseq.ctxs, el);
+  if ((i < 0) || (util.textseq.ctxs[i] != ctx)) return;
   util.textseq.ctxs.splice(i, 1);
   var textseqCtx = el.$$textseqCtx;
   var idx;
   if (textseqCtx) idx = textseqCtx.idx;
   if (ctx.oncomplete) ctx.oncomplete(ctx, idx);
-  if (textseqCtx) {
-    textseqCtx.idx++;
-    if (textseqCtx.idx < textseqCtx.textList.length) {
-      if (!textseqCtx.opt.cursor.repeat) textseqCtx.opt.cursor.n = 0;
-      setTimeout(util.textseq1, textseqCtx.opt.pause, el, textseqCtx.textList[textseqCtx.idx], textseqCtx.opt);
-    }
+  if (!textseqCtx || (el.$$textseqCtx != textseqCtx)) return;
+  textseqCtx.idx++;
+  if (textseqCtx.idx < textseqCtx.textList.length) {
+    if (!textseqCtx.opt.cursor.repeat) textseqCtx.opt.cursor.n = 0;
+    textseqCtx.tmrId = setTimeout(util.textseq.next, textseqCtx.opt.pause, el, textseqCtx);
+  } else {
+    delete el.$$textseqCtx;
   }
+};
+util.textseq.next = function(el, ctx) {
+  if (el.$$textseqCtx != ctx) return;
+  ctx.tmrId = 0;
+  util.textseq1(el, ctx.textList[ctx.idx], ctx.opt);
 };
 util.textseq.createCtx = function(el, text, opt) {
   if (!opt) opt = {};
@@ -3860,11 +3880,11 @@ util.setupStyle = function() {
 };
 
 util.setStyle = function(el, a1, a2, a3) {
+  el = util.getElement(el);
+  if (!el) return;
   util.callFn4El(util._setStyle, el, a1, a2, a3);
 };
 util._setStyle = function(el, a1, a2, a3) {
-  el = util.getElement(el);
-  if (!el) return;
   var imp = true;
   if ((a1 === false) || (a2 === false) || (a3 === false)) imp = false;
   if (a1 instanceof Object) {
@@ -4070,7 +4090,7 @@ util.infotip.__hide = function(obj) {
 };
 
 util.infotip.isVisible = function() {
-  return util.infotip.obj.el != null;
+  return util.infotip.obj.el.body != null;
 };
 
 util.infotip.adjust = function() {
@@ -4268,7 +4288,7 @@ util.fadeIn = function(el, speed, cb, arg) {
     el.fadeTimerId = 0;
   }
   util.addClass(el, 'fadeout');
-  setTimeout(util._fadeIn, 0, el, speed, cb, arg);
+  el.fadeTimerId = setTimeout(util._fadeIn, 0, el, speed, cb, arg);
 };
 util._fadeIn = function(el, speed, cb, arg) {
   var t = speed / 1000;
@@ -4292,7 +4312,7 @@ util.fadeOut = function(el, speed, cb, arg) {
     el.fadeTimerId = 0;
   }
   util.removeClass(el, 'fadein');
-  setTimeout(util._fadeOut, 0, el, speed, cb, arg);
+  el.fadeTimerId = setTimeout(util._fadeOut, 0, el, speed, cb, arg);
 };
 util._fadeOut = function(el, speed, cb, arg) {
   var t = speed / 1000;
@@ -4547,7 +4567,7 @@ util.loadingScreen.hide = function() {
   return false;
 };
 util.loadingScreen.destroy = function() {
-  util.loadingScreen.modal.hide();
+  util.modal.hide(util.loadingScreen.modal);
   util.loadingScreen.msg = null;
   util.loadingScreen.baseEl = null;
   util.loadingScreen.modal = null;
@@ -4661,6 +4681,9 @@ util.Window = function(opt) {
   ctx.win = this.createWin(ctx, opt);
   ctx.win.ctx = ctx;
   document.body.appendChild(ctx.win);
+  var w = ctx.win.offsetWidth - util.Window.WIN_BORDER * 2;
+  var h = ctx.win.offsetHeight - util.Window.WIN_BORDER * 2;
+  ctx.size(w, h);
   ctx.moveToInitPos();
   ctx.initWidth = ctx.win.offsetWidth - util.Window.WIN_BORDER * 2;
   ctx.initHeight = ctx.win.offsetHeight - util.Window.WIN_BORDER * 2;
@@ -5082,7 +5105,7 @@ util.Window.prototype = {
     util.Window.enableTextSelect();
     var x = util.getPxVal(ctx.win.style.left);
     var y = util.getPxVal(ctx.win.style.top);
-    util.callFn(ctx.opt.onstartmove, ctx, x, y);
+    util.callFn(ctx.opt.onstopmove, ctx, x, y);
   },
   resetSize: function() {
     this.win.style.width = this.initWidth + 'px';
@@ -5396,10 +5419,16 @@ util.Window.prototype = {
   },
   move: function(x, y) {
     var ctx = this;
-    if (x) ctx.win.style.left = x + 'px';
-    if (y) ctx.win.style.top = y + 'px';
-    if (x == undefined) x = util.getPxVal(ctx.win.style.left);
-    if (y == undefined) y = util.getPxVal(ctx.win.style.top);
+    if (x == undefined) {
+      x = util.getPxVal(ctx.win.style.left);
+    } else {
+      ctx.win.style.left = x + 'px';
+    }
+    if (y == undefined) {
+      y = util.getPxVal(ctx.win.style.top);
+    } else {
+      ctx.win.style.top = y + 'px';
+    }
     util.callFn(ctx.opt.onmove, ctx, x, y);
   },
   size: function(w, h) {
@@ -5407,7 +5436,7 @@ util.Window.prototype = {
     if (w) {
       if (w < ctx.computedMinW) {
         w = ctx.computedMinW;
-      } else if ((ctx.computedMaxW > 0) && (h > ctx.computedMaxW)) {
+      } else if ((ctx.computedMaxW > 0) && (w > ctx.computedMaxW)) {
         w = ctx.computedMaxW;
       }
       ctx.win.style.width = w + 'px';
@@ -5472,7 +5501,7 @@ util.Window.prototype = {
     var ctx = this;
     if (!util.Window.isContext(ctx)) ctx = util.Window.getContext(this);
     if ((f == true) || (util.callFn(ctx.opt.onbeforeclose, ctx) !== false)) {
-      util.modal.hide(ctx.modal);
+      if (ctx.modal) util.modal.hide(ctx.modal);
       util.fadeOut(ctx.win, 200, ctx._close, ctx);
     }
   },
@@ -5679,7 +5708,7 @@ util.modal.prototype = {
     var ctx = el.ctx;
     if (ctx && (ctx.sig == 'modal')) {
       if (ctx.rmvByClickCb) ctx.rmvByClickCb();
-      ctx.hide();
+      util.modal.hide(ctx);
     }
   }
 };
@@ -5764,13 +5793,19 @@ util.dialog = function(content, opt) {
   ctx.el = ctx.create(ctx, o.boby, opt);
   ctx.btnEls = o.btnEls;
   ctx.open = true;
-
   var closeAnywhere = false;
   if (opt) {
     if (opt.closeAnywhere) closeAnywhere = true;
   }
-
-  ctx.modal = util.modal.show(ctx.el, closeAnywhere, opt.onclose);
+  var onclose = null;
+  if (closeAnywhere) {
+    onclose = function() {
+      util.dialog.remove(ctx);
+      ctx.open = false;
+      if (opt.onclose) opt.onclose();
+    };
+  }
+  ctx.modal = util.modal.show(ctx.el, closeAnywhere, onclose);
   setTimeout(util.dialog.focusBtn, 10);
 };
 util.dialog.prototype = {
@@ -5935,7 +5970,6 @@ util.dialog.open = function(content, opt) {
 
 util.dialog.btnCb = function(e) {
   var el = e.target;
-  util.dialog.instances.pop();
   util.dialog.btnHandler(el);
 };
 
@@ -5945,22 +5979,36 @@ util.dialog.btnHandler = function(el) {
   if (ctx.opt) data = ctx.opt.data;
   var f = true;
   if (el.cb) {
-    f = el.cb(data);
-    if (f !== false) f = true;
+    f = (el.cb(data) !== false);
   }
-  if (f) ctx.close(ctx);
+  if (f) {
+    util.dialog.remove(ctx);
+    ctx.close(ctx);
+  }
+};
+
+util.dialog.remove = function(ctx) {
+  var a = util.dialog.instances;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] == ctx) {
+      a.splice(i, 1);
+      return;
+    }
+  }
 };
 
 util.dialog.close = function(btnIdx) {
-  var d = util.dialog.instances.pop();
+  var d = util.dialog.get();
   if (!d) return;
   if (btnIdx == undefined) {
+    util.dialog.remove(d);
     d.close(d);
   } else {
     var b = d.btnEls[btnIdx];
     if (b) {
       util.dialog.btnHandler(b);
     } else {
+      util.dialog.remove(d);
       d.close(d);
     }
   }
@@ -6037,6 +6085,7 @@ util.dialog.info = function(a1, a2, a3, a4) {
     title: title,
     buttons: [{label: 'OK', focus: true, cb: cb}],
     className: opt.className,
+    data: opt.data,
     style: opt.style
   };
   msg = util.null2empty(msg);
@@ -6155,7 +6204,7 @@ util.dialog.sysCbY = function(ctx) {
 };
 util.dialog.sysCbN = function(ctx) {
   var f;
-  if (ctx.cbN) ctx.cbN(ctx.data);
+  if (ctx.cbN) f = ctx.cbN(ctx.data);
   return f;
 };
 
@@ -6572,7 +6621,7 @@ util.Meter.prototype = {
     this.redraw();
   },
   setOptimum: function(v) {
-    this.optimum = v | 0;
+    this.opt.optimum = v | 0;
     this.redraw();
   },
   setSpeed: function(v) {
@@ -6817,7 +6866,7 @@ util.Led.prototype = {
   },
   setLabel: function(txt) {
     var ctx = this;
-    var el = ctx.labelEL;
+    var el = ctx.labelEl;
     if (!el) {
       el = document.createElement('span');
       util.addClass(el, 'led-label');
@@ -6829,7 +6878,7 @@ util.Led.prototype = {
       ctx.baseEl.appendChild(el);
     }
     el.innerHTML = txt;
-    ctx.labelEL = el;
+    ctx.labelEl = el;
   },
   getElement: function() {
     return this.baseEl;
@@ -7101,8 +7150,8 @@ util.rot47 = function(s, n) {
 //---------------------------------------------------------
 // Base64
 //---------------------------------------------------------
-util.Base64 = {};
-util.Base64.encode = function(arr) {
+util.base64 = {};
+util.base64.encode = function(arr) {
   var len = arr.length;
   if (len == 0) return '';
   var tbl = {64: 61, 63: 47, 62: 43};
@@ -7120,7 +7169,7 @@ util.Base64.encode = function(arr) {
   }
   return str;
 };
-util.Base64.decode = function(str) {
+util.base64.decode = function(str) {
   var arr = [];
   if (str.length == 0) return arr;
   for (var i = 0; i < str.length; i++) {
@@ -7201,42 +7250,36 @@ util.toBinaryString = function(a) {
 //---------------------------------------------------------
 // XB64
 //---------------------------------------------------------
-util.encodeXB64 = function(s, k) {
-  var a = ((typeof s == 'string') ? util.UTF8.toByteArray(s) : s);
-  var x = util.UTF8.toByteArray(k);
-  var b = util._encodeXB64(a, x);
-  return util.Base64.encode(b);
-};
-util._encodeXB64 = function(a, k) {
-  var ln = a.length;
+util.xb64 = {};
+util.xb64.encode = function(src, key) {
+  if (src == null) return null;
+  if (typeof src == 'string') src = util.utf8.toByteArray(src);
+  var k = util.utf8.toByteArray(key);
+  var ln = src.length;
   var kl = k.length;
-  if ((ln == 0) || (kl == 0)) return a;
-  var d = kl - ln;
-  if (d < 0) d = 0;
-  var b = [];
-  for (var i = 0; i < ln; i++) {
-    b.push(a[i] ^ k[i % kl]);
+  if ((ln == 0) || (kl == 0)) {
+    var b = src;
+  } else {
+    var d = kl - ln;
+    if (d < 0) d = 0;
+    b = [];
+    for (var i = 0; i < ln; i++) {
+      b.push(src[i] ^ k[i % kl]);
+    }
+    for (i = 0; i < d; i++) {
+      b.push(255 ^ k[(ln + i) % kl]);
+    }
+    b.push(d);
   }
-  var n = i;
-  for (i = 0; i < d; i++) {
-    b.push(255 ^ k[(n + i) % kl]);
-  }
-  b.push(d);
-  return b;
+  return util.base64.encode(b);
 };
-util.decodeXB64 = function(s, k, byB) {
-  if (s == null) return null;
-  s = util.convertNewLine(s, '\n').replace(/\n/g, '');
-  var b = util.Base64.decode(s);
-  var x = util.UTF8.toByteArray(k);
-  var a = util._decodeXB64(b, x);
-  if (!byB) a = util.UTF8.fromByteArray(a);
-  return a;
-};
-util._decodeXB64 = function(a, k) {
+util.xb64.decode = function(src, key) {
+  if (src == null) return null;
+  var a = util.base64.decode(src);
+  var k = util.utf8.toByteArray(key);
   var al = a.length;
   var kl = k.length;
-  if ((al == 0) || (kl == 0)) return a;
+  if ((al == 0) || (kl == 0)) return a.slice();
   var d = a[al - 1];
   var ln = al - d - 1;
   var b = [];
@@ -7245,12 +7288,17 @@ util._decodeXB64 = function(a, k) {
   }
   return b;
 };
+util.xb64.decodeToString = function(src, key) {
+  if (src == null) return null;
+  var a = util.xb64.decode(src, key);
+  return util.utf8.fromByteArray(a);
+};
 
 //---------------------------------------------------------
 // UTF-8
 //---------------------------------------------------------
-util.UTF8 = {};
-util.UTF8.toByteArray = function(s) {
+util.utf8 = {};
+util.utf8.toByteArray = function(s) {
   var a = [];
   if (!s) return a;
   var chs = util.str2chars(s);
@@ -7269,7 +7317,7 @@ util.UTF8.toByteArray = function(s) {
   }
   return a;
 };
-util.UTF8.fromByteArray = function(b) {
+util.utf8.fromByteArray = function(b) {
   if (!b) return null;
   var e = '';
   for (var i = 0; i < b.length; i++) {
@@ -7282,11 +7330,11 @@ util.UTF8.fromByteArray = function(b) {
 // bit operation
 //---------------------------------------------------------
 util.bit8 = {};
-util.bit8.rotateL = function(v, n) {
+util.bit8.rotateLeft = function(v, n) {
   n = n % 8;
   return ((v << n) | (v >> (8 - n))) & 255;
 };
-util.bit8.rotateR = function(v, n) {
+util.bit8.rotateRight = function(v, n) {
   n = n % 8;
   return ((v >> n) | (v << (8 - n))) & 255;
 };
@@ -7297,41 +7345,35 @@ util.bit8.invert = function(v) {
 //---------------------------------------------------------
 // BSB64
 //---------------------------------------------------------
-util.encodeBSB64 = function(s, n) {
-  var a = ((typeof s == 'string') ? util.UTF8.toByteArray(s) : s);
-  return util.BSB64.encode(a, n);
-};
-util.decodeBSB64 = function(s, n, byB) {
-  if (s == null) return null;
-  s = util.convertNewLine(s, '\n').replace(/\n/g, '');
-  if (s.match(/\$\d+$/)) {
-    var v = s.split('$');
-    s = v[0];
-    n = v[1];
+util.bsb64 = {};
+util.bsb64.encode = function(src, n) {
+  if (typeof src == 'string') src = util.utf8.toByteArray(src);
+  var fn = util.bit8.rotateLeft;
+  if (n % 8 == 0) {
+    fn = util.bit8.invert;
   }
-  var a = util.BSB64.decode(s, n);
-  if (!byB) a = util.UTF8.fromByteArray(a);
-  return a;
-};
-util.BSB64 = {};
-util.BSB64.encode = function(a, n) {
-  var fn = util.bit8.rotateL;
-  if (n % 8 == 0) fn = util.bit8.invert;
-  var b = [];
-  for (var i = 0; i < a.length; i++) {
-    b.push(fn(a[i], n));
+  var buf = [];
+  for (var i = 0; i < src.length; i++) {
+    buf.push(fn(src[i], n));
   }
-  return util.Base64.encode(b);
+  var str = util.base64.encode(buf);
+  return str;
 };
-util.BSB64.decode = function(s, n) {
-  var fn = util.bit8.rotateR;
-  if (n % 8 == 0) fn = util.bit8.invert;
-  var b = util.Base64.decode(s);
-  var a = [];
-  for (var i = 0; i < b.length; i++) {
-    a.push(fn(b[i], n));
+util.bsb64.decode = function(src, n) {
+  var fn = util.bit8.rotateRight;
+  if (n % 8 == 0) {
+    fn = util.bit8.invert;
   }
-  return a;
+  var buf = util.base64.decode(src);
+  var arr = [];
+  for (var i = 0; i < buf.length; i++) {
+    arr.push(fn(buf[i], n));
+  }
+  return arr;
+};
+util.bsb64.decodeToString = function(src, n) {
+  var arr = util.bsb64.decode(src, n);
+  return util.utf8.fromByteArray(arr);
 };
 
 //---------------------------------------------------------
@@ -7369,9 +7411,18 @@ util.RingBuffer.prototype = {
     ctx.buffer[i] = data;
   },
   get: function(idx) {
-    if (this.len < this.cnt) idx += this.cnt;
-    idx %= this.len;
-    return this.buffer[idx];
+    var ctx = this;
+    if (idx < 0) {
+      idx *= -1;
+      if (((ctx.cnt < ctx.len) && (idx > ctx.cnt)) || ((ctx.cnt >= ctx.len) && (idx > ctx.len))) {
+        return;
+      }
+      idx = ctx.cnt - idx;
+    } else {
+      if (ctx.len < ctx.cnt) idx += ctx.cnt;
+    }
+    idx %= ctx.len;
+    return ctx.buffer[idx];
   },
   getAll: function() {
     var buf = [];
@@ -7427,8 +7478,8 @@ util.Console = function(el, opt) {
   var fontFamily = (opt.fontFamily == undefined ? 'Consolas, Monaco, Menlo, monospace, sans-serif' : opt.fontFamily);
 
   var pre = document.createElement('pre');
-  pre.width = '100%';
-  pre.height = '100%';
+  pre.style.width = '100%';
+  pre.style.height = '100%';
   pre.style.margin = 0;
   pre.style.padding = 0;
   pre.style.fontFamily = fontFamily;
@@ -7567,7 +7618,7 @@ util.Counter = function(el, opt) {
   if (typeof opt.duration == 'number') {
     opt.duration = {min: opt.duration, max: opt.duration};
   }
-  var v = opt.value;
+  var v = util.trunc(parseFloat(opt.value), opt.scale);
   ctx.dMin = opt.duration.min;
   ctx.dMax = opt.duration.max;
   ctx.R = 20;
@@ -7604,7 +7655,7 @@ util.Counter.prototype = {
   },
   setValue: function(v, dur) {
     var ctx = this;
-    v = util.floor(parseFloat(v), ctx.scale);
+    v = util.trunc(parseFloat(v), ctx.scale);
     ctx._stopTmr(ctx);
     ctx.v = v;
     var dMax = (dur == undefined ? ctx.dMax : dur);
@@ -7666,34 +7717,14 @@ util.Counter.prototype = {
   },
   up: function() {
     var ctx = this;
-    var v = ctx.v;
-    if (ctx.scale == 0) {
-      v++;
-    } else {
-      v = util.alignDecimal(v, ctx.scale).replace('.', '');
-      v = parseInt(v) + 1;
-      var s = v + '';
-      v = s.slice(0, s.length - ctx.scale) + '.' + s.slice(ctx.scale * (-1));
-    }
+    var v = util.trunc(parseFloat(ctx.v), ctx.scale);
+    v = util.round(v + Math.pow(10, -ctx.scale), ctx.scale);
     ctx.setValue(v);
   },
   down: function() {
     var ctx = this;
-    var v = ctx.v;
-    if (ctx.scale == 0) {
-      v--;
-    } else {
-      v = util.alignDecimal(v, ctx.scale).replace('.', '');
-      v = parseInt(v);
-      if (v <= 0) {
-        v = v * (-1) + 1;
-        var s = '-' + util.lpad(v, '0', ctx.scale);
-      } else {
-        v--;
-        s = v + '';
-      }
-      v = s.slice(0, s.length - ctx.scale) + '.' + s.slice(ctx.scale * (-1));
-    }
+    var v = util.trunc(parseFloat(ctx.v), ctx.scale);
+    v = util.round(v - Math.pow(10, -ctx.scale), ctx.scale);
     ctx.setValue(v);
   },
   setText: function(s) {
@@ -7718,7 +7749,7 @@ util.Counter.prototype = {
   print: function(ctx, v) {
     var s = v;
     if (ctx.scale > 0) s = util.alignDecimalZero(s, ctx.scale);
-    if (ctx.fmt && ((v >= 1000) || (v <= 1000))) s = util.formatNumber(s);
+    if (ctx.fmt && ((v >= 1000) || (v <= -1000))) s = util.formatNumber(s);
     ctx._print(ctx, ctx.pfx + s + ctx.sfx);
     if (ctx.cb) ctx.cb(v);
   },
@@ -7736,12 +7767,9 @@ util.Counter.prototype = {
 //---------------------------------------------------------
 // Interval Proc
 //---------------------------------------------------------
-// Start  : util.IntervalProc.start('<PROC_ID>', fn, 1000, ARG, [async(true|false)]);
+// Start  : util.IntervalProc.start('<PROC_ID>', fn, 1000, ARG, [manualNext(true|false)]);
 // Stop   : util.IntervalProc.stop('<PROC_ID>');
 // Restart: util.IntervalProc.start('<PROC_ID>');
-//
-// Async:
-// -> call in fn: util.IntervalProc.next('<PROC_ID>');
 //---------------------------------------------------------
 util.IntervalProc = {};
 
@@ -7750,7 +7778,8 @@ util.IntervalProc = {};
 //     fn: function(),
 //     interval: millis,
 //     arg: argument for fn,
-//     async: true|false,
+//     manualNext: true|false, // true: next() must be called manually
+//     active: true|false,
 //     tmrId: timer-id
 //   }
 // }
@@ -7759,12 +7788,13 @@ util.IntervalProc.procs = {};
 /**
  * Register an interval proc.
  */
-util.IntervalProc.register = function(id, fn, interval, arg, async) {
+util.IntervalProc.register = function(id, fn, interval, arg, manualNext) {
   util.IntervalProc.procs[id] = {
     fn: fn,
     interval: interval,
     arg: arg,
-    async: (async ? true : false),
+    manualNext: (manualNext ? true : false),
+    active: false,
     tmrId: 0
   };
 };
@@ -7779,11 +7809,12 @@ util.IntervalProc.remove = function(id) {
 /**
  * Start an interval proc.
  */
-util.IntervalProc.start = function(id, fn, interval, arg, async) {
-  if (fn) util.IntervalProc.register(id, fn, interval, arg, async);
+util.IntervalProc.start = function(id, fn, interval, arg, manualNext) {
+  if (fn) util.IntervalProc.register(id, fn, interval, arg, manualNext);
   var p = util.IntervalProc.procs[id];
   if (p) {
     util.IntervalProc._stop(p);
+    p.active = true;
     util.IntervalProc.exec(id);
   }
 };
@@ -7793,7 +7824,10 @@ util.IntervalProc.start = function(id, fn, interval, arg, async) {
  */
 util.IntervalProc.stop = function(id) {
   var p = util.IntervalProc.procs[id];
-  if (p) util.IntervalProc._stop(p);
+  if (p) {
+    p.active = false;
+    util.IntervalProc._stop(p);
+  }
 };
 util.IntervalProc._stop = function(p) {
   if (p.tmrId > 0) {
@@ -7807,7 +7841,7 @@ util.IntervalProc._stop = function(p) {
  */
 util.IntervalProc.next = function(id, interval) {
   var p = util.IntervalProc.procs[id];
-  if (p) {
+  if (p && p.active) {
     util.IntervalProc._stop(p);
     if (interval == undefined) interval = p.interval;
     p.tmrId = setTimeout(util.IntervalProc.exec, interval, id);
@@ -7827,9 +7861,11 @@ util.IntervalProc.setInterval = function(id, interval) {
  */
 util.IntervalProc.exec = function(id) {
   var p = util.IntervalProc.procs[id];
-  if (p) {
+  if (p && p.active) {
     p.fn(p.arg);
-    if (!p.async) util.IntervalProc.next(id);
+    if ((util.IntervalProc.procs[id] == p) && p.active && !p.manualNext) {
+      util.IntervalProc.next(id);
+    }
   }
 };
 
@@ -7871,11 +7907,10 @@ util.event.send = function(name, data) {
 util.event._send = function() {
   var ev = util.event.events.shift();
   if (!ev) return;
-  var e = {name: ev.name, data: ev.data};
   var listeners = util.event.listeners[ev.name];
-  if (listeners) util.event.callListeners(listeners, e);
+  if (listeners) util.event.callListeners(listeners, ev);
   listeners = util.event.listeners['*'];
-  if (listeners) util.event.callListeners(listeners, e);
+  if (listeners) util.event.callListeners(listeners, ev);
 };
 
 util.event.callListeners = function(listeners, e) {
@@ -8008,11 +8043,10 @@ util.isForwardMovement = function(azimuth, heading, range) {
 
 //---------------------------------------------------------
 util.calcMod10 = function(s, w) {
-  var a = s.split('');
   var v = [0, 0];
   var d = 0;
-  for (var i = a.length - 1; i >= 0; i--) {
-    v[d % 2] += a[i] | 0;
+  for (var i = s.length - 1; i >= 0; i--) {
+    v[d % 2] += s[i] | 0;
     d++;
   }
   var c = v[0] * w + v[1];
@@ -8020,11 +8054,10 @@ util.calcMod10 = function(s, w) {
 };
 
 util.calcMod11 = function(s) {
-  var a = s.split('');
   var n = 0;
   var d = 0;
-  for (var i = a.length - 1; i >= 0; i--) {
-    var v = a[i] | 0;
+  for (var i = s.length - 1; i >= 0; i--) {
+    var v = s[i] | 0;
     n += v * ((d % 6) + 2);
     d++;
   }
@@ -8039,12 +8072,11 @@ util.calcMod43 = function(s) {
       s = eval(s);
     } catch (e) {return '';}
   }
-  var a = s.split('');
   var n = 0;
-  for (var i = 0; i < a.length; i++) {
-    var v = a[i];
+  for (var i = 0; i < s.length; i++) {
+    var v = s[i];
     if (v == '*') {
-      if ((i == 0) || (i == a.length - 1)) {
+      if ((i == 0) || (i == s.length - 1)) {
         continue;
       } else {
         return '';
@@ -8210,7 +8242,7 @@ util.dnd.onDrop = function(e) {
     handler = handlers[i];
     if (util.isTargetEl(e.target, handler.el)) break;
   }
-  if (i == handlers) return;
+  if (i == handlers.length) return;
   var cb = handler.cb;
   if (handler.mode == 'evt') {
     if (cb) cb(e);
